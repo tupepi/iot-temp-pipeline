@@ -1,0 +1,33 @@
+# ============================================
+# FIRMWARE (Arduino/ESP32)
+# ============================================
+firmware/**/secrets.h
+
+# ============================================
+# BACKEND (Node.js)
+# ============================================
+backend/node_modules/
+backend/.env
+backend/.env.local
+backend/npm-debug.log
+backend/yarn-error.log
+
+# ============================================
+# FRONTEND (React)
+# ============================================
+frontend/node_modules/
+frontend/.env
+frontend/.env.local
+frontend/dist/
+frontend/build/
+frontend/npm-debug.log
+frontend/yarn-error.log
+
+# ============================================
+# YLEISET (käyttöjärjestelmä / editori)
+# ============================================
+.DS_Store
+Thumbs.db
+*.log
+.vscode/*
+!.vscode/extensions.json
