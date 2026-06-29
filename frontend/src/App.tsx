@@ -77,6 +77,7 @@ useEffect(() => {                                                       // Ajeta
       <p>Sijainti: {device?.location}</p>                 {/* Näytetään laitteen sijainti */}
       <p>Viimeisin lämpötila: {measurements[measurements.length - 1]?.temperature} °C</p>
       <p>Mitattu: {measurements[measurements.length - 1] ? new Date(measurements[measurements.length - 1].measured_at).toLocaleString('fi-FI') : ''}</p>
+      <p>Muut mittaukset: <ul>{measurements.slice(0, -1).reverse().map((m, i) => (<li key={i}>{m.temperature} °C, {new Date(m.measured_at).toLocaleString('fi-FI')}</li>))}</ul></p>
     </div>
   );
 }
