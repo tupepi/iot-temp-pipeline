@@ -22,48 +22,37 @@ DallasTemperature sensors(&oneWire);
 
 WebServer server(80);
 
-// --- LET'S ENCRYPT ISRG ROOT X1 -JUURIVARMENNE ---
-// Tämä on julkinen luottamustieto, ei salaisuus — Render käyttää Let's Encryptin
-// varmenteita, ja ESP32 tarvitsee tämän tunnistaakseen palvelimen varmenteen aidoksi.
-// TÄRKEÄ: tarkista tämä aina virallisesta lähteestä (letsencrypt.org/certs/isrgrootx1.pem)
+// --- GOOGLE TRUST SERVICES WE1 -VÄLISERTIFIKAATTI ---
+// Tämä on julkinen luottamustieto, ei salaisuus — Render käyttää Cloudflaren kautta
+// Google Trust Servicesin WE1-sertifikaattia, ja ESP32 tarvitsee tämän tunnistaakseen
+// palvelimen varmenteen aidoksi.
+// TÄRKEÄ: tarkista tämä aina virallisesta lähteestä (http://i.pki.goog/we1.crt)
 // ennen käyttöä, koska yksikin väärä merkki estää yhteyden toimimisen.
+// Huom: tämä sertifikaatti vanhenee 2029-02-20 — päivitä silloin uuteen.
 const char* ROOT_CA_CERT = R"EOF(
 -----BEGIN CERTIFICATE-----
-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
+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
 -----END CERTIFICATE-----
 )EOF";
 
 // --- AJASTUS PILVILÄHETYKSELLE ---
 unsigned long lastUploadTime = 0;                  // Milloin data lähetettiin viimeksi (millis()-aikaleima)
 const unsigned long UPLOAD_INTERVAL = 10UL * 60UL * 1000UL; // 10 minuuttia millisekunteina (10 * 60 * 1000)
+const int MAX_RETRIES = 4;          // Yritetään lähetystä enintään 4 kertaa ennen luovuttamista
+const unsigned long RETRY_DELAY = 20000; // 20 sekuntia uudelleenyritysten välillä — antaa Render-palvelimen (ilmaistaso) aikaa herätä lepotilasta
 
 // =================================================================
 // PUHTAAT LOGIIKKAFUNKTIOT
@@ -151,34 +140,38 @@ void checkWifiConnection() {                              // Tarkistaa ja korjaa
   }
 }
 
-// Lähettää mittauksen backendille HTTPS POST -pyynnöllä
-void uploadMeasurement(float tempC, bool sensorOk, String timestamp) { // Ottaa lämpötilan, tilan ja aikaleiman
-  WiFiClientSecure client;                                  // Luodaan suojattu (HTTPS) yhteysolio
-  client.setCACert(ROOT_CA_CERT);                            // Asetetaan luotettu juurivarmenne yhteydelle
+bool uploadMeasurement(float tempC, bool sensorOk, String timestamp) { // Palauttaa true jos lähetys onnistui, false jos epäonnistui
+  WiFiClientSecure client;                                              // Luodaan suojattu (HTTPS) yhteysolio
+  //client.setInsecure(); // VÄLIAIKAINEN — ohitetaan varmenteen tarkistus debuggausta varten
+  client.setCACert(ROOT_CA_CERT);                                       // Asetetaan luotettu juurivarmenne yhteydelle
 
-  HTTPClient https;                                          // Luodaan korkean tason HTTPS-pyyntöolio
-  String url = "https://" + String(backendHost) + "/measurements"; // Rakennetaan täysi osoite
-
-  if (!https.begin(client, url)) {                           // Aloitetaan yhteys annettuun osoitteeseen
-    Serial.println("HTTPS-yhteyden aloitus epäonnistui");      // Jos epäonnistuu, tulostetaan virhe ja lopetetaan
-    return;
+  HTTPClient https;                                                     // Luodaan korkean tason HTTPS-pyyntöolio
+  String url = "https://" + String(backendHost) + "/measurements";     // Rakennetaan täysi osoite
+  Serial.printf("Yhdistetään: %s\n", url.c_str());  // Tulostetaan täysi URL varmistukseksi
+  client.setTimeout(15000); // 15 sekuntia timeoutiksi
+  https.setTimeout(15000);  // sama HTTP-tasolle
+  if (!https.begin(client, url)) {                                      // Aloitetaan yhteys annettuun osoitteeseen
+    Serial.println("HTTPS-yhteyden aloitus epäonnistui");               // Jos epäonnistuu, tulostetaan virhe...
+    return false;                                                        // ...ja palautetaan epäonnistuminen
   }
 
-  https.addHeader("Content-Type", "application/json");       // Kerrotaan palvelimelle, että runko on JSON-muotoa
-  https.addHeader("X-API-Key", apiKey);                       // Lisätään API-avain otsikkoon, jotta backend hyväksyy pyynnön
+  https.addHeader("Content-Type", "application/json");                  // Kerrotaan palvelimelle että runko on JSON-muotoa
+  https.addHeader("X-API-Key", apiKey);                                 // Lisätään API-avain otsikkoon jotta backend hyväksyy pyynnön
 
-  String payload = buildUploadPayload(tempC, sensorOk, timestamp); // Rakennetaan lähetettävä JSON-data
-  int httpCode = https.POST(payload);                         // Lähetetään POST-pyyntö ja saadaan HTTP-statuskoodi takaisin
+  String payload = buildUploadPayload(tempC, sensorOk, timestamp);      // Rakennetaan lähetettävä JSON-data
+  int httpCode = https.POST(payload);                                    // Lähetetään POST-pyyntö ja saadaan HTTP-statuskoodi takaisin
 
-  if (httpCode > 0) {                                         // Jos saatiin jokin vastaus (ei verkkovirhettä)...
-    Serial.printf("Pilvilähetys: HTTP %d\n", httpCode);          // ...tulostetaan statuskoodi (esim. 201 = onnistui)
-    String response = https.getString();                       // Luetaan palvelimen vastauksen runko
-    Serial.println(response);                                   // Tulostetaan se debug-tarkoituksiin
-  } else {                                                    // Jos pyyntö epäonnistui kokonaan (esim. ei yhteyttä)...
-    Serial.printf("Pilvilähetys epäonnistui: %s\n", https.errorToString(httpCode).c_str()); // Tulostetaan virhe
+  if (httpCode > 0) {                                                   // Jos saatiin jokin vastaus (ei verkkovirhettä)...
+    Serial.printf("Pilvilähetys: HTTP %d\n", httpCode);                 // ...tulostetaan statuskoodi (esim. 201 = onnistui)
+    String response = https.getString();                                 // Luetaan palvelimen vastauksen runko
+    Serial.println(response);                                            // Tulostetaan se debug-tarkoituksiin
+    https.end();                                                         // Suljetaan yhteys siististi
+    return httpCode == 200 || httpCode == 201;                           // Palautetaan true jos HTTP-koodi on 200 tai 201 (onnistuminen)
+  } else {                                                              // Jos pyyntö epäonnistui kokonaan (esim. ei yhteyttä)...
+    Serial.printf("Pilvilähetys epäonnistui: %s\n", https.errorToString(httpCode).c_str()); // ...tulostetaan virheen kuvaus
+    https.end();                                                         // Suljetaan yhteys siististi myös virhetilanteessa
+    return false;                                                        // Palautetaan epäonnistuminen
   }
-
-  https.end();                                                // Suljetaan yhteys siististi
 }
 
 void handleTemp() {
@@ -267,7 +260,23 @@ void loop() {
     float tempC = sensors.getTempCByIndex(0);                                 // Luetaan lämpötila
     bool sensorOk = isValidTemperature(tempC);                                // Tarkistetaan kelvollisuus
     String timestamp = getTimestamp();                                        // Haetaan nykyinen UTC-aikaleima
-    uploadMeasurement(tempC, sensorOk, timestamp);                             // Lähetetään data backendille
+    // Render-palvelin (ilmaistaso) nukahtaa ~15 min käyttämättömyyden jälkeen.
+    // Ensimmäinen pyyntö herättää sen, mutta herätys kestää 20-30 s — retry-logiikka
+    // antaa palvelimelle aikaa herätä sen sijaan että luovutettaisiin heti.
+    for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      Serial.printf("Lähetysyritys %d/%d\n", attempt, MAX_RETRIES); // Tulostetaan monesko yritys menossa
+      bool success = uploadMeasurement(tempC, sensorOk, timestamp);  // Yritetään lähettää data backendille
+      if (success) break;                                             // Jos onnistui, poistutaan silmukasta
+      if (attempt < MAX_RETRIES) {                                    // Jos yrityksiä on vielä jäljellä...
+        Serial.printf("Yritetään uudelleen %lu s päästä...\n", RETRY_DELAY / 1000); // ...kerrotaan käyttäjälle odotusaika
+        unsigned long retryStart = millis();                          // Tallennetaan odotuksen alkuaika
+        while (millis() - retryStart < RETRY_DELAY) {                 // Odotetaan 20 s, mutta ei jäädytä laitetta...
+          server.handleClient();                                       // ...vaan palvellaan /temp ja /api -pyyntöjä odotuksen aikana
+          ArduinoOTA.handle();                                         // ...ja kuunnellaan OTA-päivityksiä odotuksen aikana
+          delay(2);                                                    // Pieni viive jotta prosessori ei pyöri täydellä teholla
+        }
+      }
+    }
   }
 
   delay(2);
