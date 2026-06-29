@@ -78,6 +78,13 @@ useEffect(() => {                                                       // Ajeta
       <p>Viimeisin lämpötila: {measurements[measurements.length - 1]?.temperature} °C</p>
       <p>Mitattu: {measurements[measurements.length - 1] ? new Date(measurements[measurements.length - 1].measured_at).toLocaleString('fi-FI') : ''}</p>
       <p>Aiemmat mittaukset: <ul>{measurements.slice(0, -1).reverse().map((m, i) => (<li key={i}>{m.temperature} °C, {new Date(m.measured_at).toLocaleString('fi-FI')}</li>))}</ul></p>
+      <h2>Taustaa</h2>
+      <p>
+
+Henkilökohtainen IoT-projekti: ulkolämpötilan mittaus ESP32:lla, data pilveen, React-dashboard sääennustevertailulla (WIP)
+
+<a href="https://github.com/tupepi/iot-temp-pipeline" target="_blank" rel="noopener noreferrer">GitHub</a>
+</p>
     </div>
   );
 }
