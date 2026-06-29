@@ -7,12 +7,22 @@ interface Device {                              // Kuvaa yhden laitteen tietorak
   created_at: string;                             // Rekisteröintiaika, aina tekstiä (ISO-muotoinen päivämäärä)
 }
 
+// Määritellään mittauksen tietorakenne
+interface Measurement {
+  measurement_id: number;        // Mittauksen yksilöllinen tunniste
+  device_id: string;             // Miltä laitteelta mittaus tuli
+  temperature: number;           // Mitattu lämpötila celsiusasteina
+  status: string;                // Anturin tila mittaushetkellä (OK / ERROR)
+  measured_at: string;           // Mittausaika ISO-muodossa
+}
+
 const BACKEND_URL = 'https://iot-temp-pipeline.onrender.com'; // Backendin osoite, vakiona ylhäällä helppoa muokkausta varten
 
 function App() {                                  // Pääkomponentti, jonka React näyttää ruudulla
-  const [device, setDevice] = useState<Device | null>(null); // Tila laitteen tiedoille: alussa null (ei vielä dataa)
-  const [loading, setLoading] = useState(true);    // Tila sille, ladataanko dataa juuri nyt (alussa true)
   const [error, setError] = useState<string | null>(null); // Tila mahdolliselle virheelle (alussa ei virhettä)
+  
+  const [device, setDevice] = useState<Device | null>(null); // Tila laitteen tiedoille: alussa null (ei vielä dataa)
+  const [deviceLoading, setDeviceLoading] = useState(true);    // Tila sille, ladataanko dataa juuri nyt (alussa true)
 
   useEffect(() => {                                // Ajetaan tämä koodi automaattisesti, kun komponentti ilmestyy
     fetch(`${BACKEND_URL}/devices/wemos-mittari`)    // Tehdään HTTP GET -pyyntö backendin laitetieto-osoitteeseen
@@ -24,15 +34,35 @@ function App() {                                  // Pääkomponentti, jonka Rea
       })
       .then((data: Device) => {                      // Kun JSON on jäsennetty...
         setDevice(data);                               // ...tallennetaan se tilaan näytettäväksi
-        setLoading(false);                             // ...ja merkitään lataus valmiiksi
+        setDeviceLoading(false);                             // ...ja merkitään lataus valmiiksi
       })
       .catch((err) => {                               // Jos jokin yllä menee pieleen (verkko, palvelin, jne.)...
         setError(err.message);                          // ...tallennetaan virheviesti tilaan
-        setLoading(false);                              // ...ja merkitään lataus valmiiksi (vaikka epäonnistuneesti)
+        setDeviceLoading(false);                              // ...ja merkitään lataus valmiiksi (vaikka epäonnistuneesti)
       });
   }, []);                                            // Tyhjä riippuvuuslista = ajetaan vain kerran, komponentin ilmestyessä
 
-  if (loading) {                                     // Jos data on yhä latautumassa...
+const [measurements, setMeasurements] = useState<Measurement[]>([]); // Tila mittauslistalle: alussa tyhjä taulukko
+const [measurementsLoading, setMeasurementsLoading] = useState(true);
+
+useEffect(() => {                                                       // Ajetaan kerran komponentin ilmestyessä
+  fetch(`${BACKEND_URL}/measurements/wemos-mittari`)                    // Haetaan kaikki laitteen mittaukset
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error(`Palvelin vastasi: ${response.status}`);
+      }
+      return response.json();
+    })
+    .then((data) => {
+      setMeasurements(data.measurements);  // Otetaan vain measurements-taulukko
+    })
+    .catch((err) => {
+      setError(err.message);                                            // Käytetään samaa virhetilaa kuin laitehaussa
+      setMeasurementsLoading(false);                                    // Merkitään mittauslataus valmiiksi (vaikka epäonnistuneesti)
+    });
+}, []);                                                                 // Tyhjä riippuvuuslista = ajetaan vain kerran
+
+  if (deviceLoading && measurementsLoading) {                                     // Jos data on yhä latautumassa...
     return <p>Ladataan...</p>;                         // ...näytetään yksinkertainen latausviesti
   }
 
@@ -45,6 +75,8 @@ function App() {                                  // Pääkomponentti, jonka Rea
       <h1>IoT Temp Pipeline</h1>                        {/* Otsikko */}
       <p>Laite: {device?.device_id}</p>                  {/* Näytetään laitteen tunniste */}
       <p>Sijainti: {device?.location}</p>                 {/* Näytetään laitteen sijainti */}
+      <p>Viimeisin lämpötila: {measurements[measurements.length - 1]?.temperature} °C</p>
+      <p>Mitattu: {measurements[measurements.length - 1] ? new Date(measurements[measurements.length - 1].measured_at).toLocaleString('fi-FI') : ''}</p>
     </div>
   );
 }
