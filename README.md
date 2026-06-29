@@ -17,6 +17,8 @@ React-dashboard (tulossa)
 
 Laite ei koskaan kommunikoi suoraan tietokannan kanssa — kaikki kulkee oman backendin läpi, jotta tietokanta on helppo vaihtaa myöhemmin tarvittaessa.
 
+ESP32 myös tarjoaa oman pienen HTTP-rajapinnan kotiverkon sisällä (`/temp`, `/api`), erillään pilviyhteydestä — tämä mahdollistaa laitteen tilan tarkistamisen suoraan paikallisverkossa ilman pilven kautta kiertämistä.
+
 ## Projektin rakenne
 iot-temp-pipeline/
 
@@ -33,8 +35,8 @@ iot-temp-pipeline/
 ## Tekninen pino
 
 - **Laitteisto:** Wemos D1 R32 (ESP32) + DS18B20-lämpötila-anturi
-- **Firmware:** Arduino/C++, langaton OTA-päivitys
-- **Backend:** Node.js + Express
+- **Firmware:** Arduino/C++, langaton OTA-päivitys, HTTPS-yhteys pilveen (Let's Encrypt Root CA)
+- **Backend:** Node.js + Express, API-avain-suojaus kirjoitusreiteille
 - **Tietokanta:** Neon (serverless PostgreSQL)
 - **Hosting:** Render (backend)
 - **Frontend:** React (suunnitteilla)
@@ -46,10 +48,11 @@ iot-temp-pipeline/
 - [x] Langaton OTA-päivitys toimii
 - [x] UTC-aikaleimat mittauksiin
 - [x] Neon-tietokanta pystyssä, perustaulut (`devices`, `measurements`) luotuna
-- [x] Paikallinen Express-palvelin käynnistyy ja vastaa
-- [ ] Backend yhdistetty Neon-tietokantaan
-- [ ] Backend julkaistu Renderiin
-- [ ] ESP32 lähettää datan backendille (POST, 15 min välein)
+- [x] Backend yhdistetty Neon-tietokantaan (`pg`-kirjasto, eristetty `database.js`-kerros)
+- [x] Backend julkaistu Renderiin
+- [x] API-reitit mittauksille ja laitetiedoille (`POST /measurements`, `GET /measurements/:deviceId`, `GET /devices/:deviceId`)
+- [x] Kirjoitusreitti suojattu API-avaimella
+- [x] ESP32 lähettää datan backendille HTTPS POST -pyynnöllä, 10 min välein
 - [ ] React-dashboard: nykytilanne + historiakuvaaja
 - [ ] Sääennusteen vertailu (Yr.no)
 
@@ -59,9 +62,9 @@ Tarvittavat kirjastot (asenna Arduino IDE:n Library Managerilla):
 - OneWire
 - DallasTemperature
 
-(WiFi, WebServer, ESPmDNS, WiFiUdp, ArduinoOTA sisältyvät ESP32-piirilevytukeen)
+(WiFi, WebServer, ESPmDNS, WiFiUdp, ArduinoOTA, WiFiClientSecure, HTTPClient sisältyvät ESP32-piirilevytukeen)
 
-Luo `firmware/wemos-mittari/secrets.h` mallin `secrets.h.example` pohjalta omilla tunnuksillasi.
+Luo `firmware/wemos-mittari/secrets.h` mallin `secrets.h.example` pohjalta omilla tunnuksillasi. Tarvittavat arvot: Wi-Fi-tunnukset, OTA-salasana, backendin API-avain ja backend-osoite.
 
 ## Asennus (backend)
 
@@ -71,10 +74,10 @@ npm install
 npm start
 ```
 
-Tarvitsee `.env`-tiedoston (ks. `.env.example`) Neon-yhteysmerkkijonolle.
+Tarvitsee `.env`-tiedoston (ks. `.env.example`) Neon-yhteysmerkkijonolle ja API-avaimelle.
 
 ## Tausta
 
 Tämä projekti on syntynyt halusta yhdistää harrastelaitteisto oikeaan, ammattimaisten käytänteiden mukaiseen pilviarkkitehtuuriin — ei vain "saada se toimimaan", vaan ymmärtää ja perustella jokainen rakenteellinen päätös matkan varrella.
 
-Projektin yhtenä tavoitteena oli harjoitella, miten tekoälyä kannattaa hyödyntää suunnittelussa ja toteutuksessa — ei vain nopeuttaa tekemistä, vaan oppia tarkoituksenmukaista käyttöä. Claude toimi keskustelukumppanina arkkitehtuurivalinnoissa, virheenselvityksessä ja koodin laadun parantamisessa; päätökset ja toteutus ovat omia. 
+Projektin yhtenä tavoitteena oli harjoitella, miten tekoälyä kannattaa hyödyntää suunnittelussa ja toteutuksessa — ei vain nopeuttaa tekemistä, vaan oppia tarkoituksenmukaista käyttöä. Claude toimi keskustelukumppanina arkkitehtuurivalinnoissa, virheenselvityksessä ja koodin laadun parantamisessa; päätökset ja toteutus ovat omia.
