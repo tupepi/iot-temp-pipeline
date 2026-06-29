@@ -5,7 +5,8 @@ on:
       - main
     paths:
       - 'frontend/**'   # Ajetaan vain jos frontend-kansio muuttuu
-  workflow_dispatch:        
+  workflow_dispatch:
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -23,7 +24,7 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
       - name: Deploy
-              run: npx gh-pages -d dist -r https://x-access-token:${GITHUB_TOKEN}@github.com/tupepi/iot-temp-pipeline.git
-              working-directory: frontend
-              env:
-                GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx gh-pages -d dist -r https://x-access-token:${GITHUB_TOKEN}@github.com/tupepi/iot-temp-pipeline.git
+        working-directory: frontend
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
