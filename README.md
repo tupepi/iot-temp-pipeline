@@ -53,6 +53,7 @@ iot-temp-pipeline/
 - [x] API-reitit mittauksille ja laitetiedoille (`POST /measurements`, `GET /measurements/:deviceId`, `GET /devices/:deviceId`)
 - [x] Kirjoitusreitti suojattu API-avaimella
 - [x] ESP32 lähettää datan backendille HTTPS POST -pyynnöllä, 10 min välein
+- [x] React-dashboard: luotu + yhteys palvelimeen saatu
 - [ ] React-dashboard: nykytilanne + historiakuvaaja
 - [ ] Sääennusteen vertailu (Yr.no)
 
