@@ -1,194 +1,274 @@
-#include <WiFi.h>             // ESP32:n Wi-Fi-toiminnot (yhteyden muodostus kotiverkkoon)
-#include <WebServer.h>        // Mahdollistaa pienen HTTP-palvelimen pyörittämisen ESP32:lla
-#include <OneWire.h>          // Matala tason kirjasto OneWire-väylän (DS18B20:n käyttämä) lukemiseen
-#include <DallasTemperature.h>// Korkean tason kirjasto, joka osaa lukea DS18B20-anturin lämpötilan helposti
-#include <ESPmDNS.h>          // Mahdollistaa laitteen löytymisen nimellä (esim. wemos-mittari.local) IP-osoitteen sijaan
-#include <WiFiUdp.h>          // UDP-tietoliikenne, jota ArduinoOTA tarvitsee taustalla toimiakseen
-#include <ArduinoOTA.h>       // Mahdollistaa koodin päivittämisen langattomasti Wi-Fin yli (Over-The-Air)
-#include <time.h>             // Tarjoaa ajan/kellon käsittelyfunktiot (NTP-ajan muotoiluun)
-#include "secrets.h"          // Erillinen tiedosto, jossa Wi-Fi- ja OTA-salasanat pidetään poissa julkisesta koodista
+#include <WiFi.h>             // ESP32:n Wi-Fi-toiminnot
+#include <WebServer.h>        // Pieni HTTP-palvelin ESP32:lla (oma /temp ja /api edelleen käytössä)
+#include <OneWire.h>          // Matalan tason OneWire-väylän luku
+#include <DallasTemperature.h>// DS18B20-anturin lukukirjasto
+#include <ESPmDNS.h>          // Laitteen löytyminen nimellä (wemos-mittari.local)
+#include <WiFiUdp.h>          // ArduinoOTA:n tarvitsema UDP-tietoliikenne
+#include <ArduinoOTA.h>       // Langaton koodipäivitys
+#include <WiFiClientSecure.h> // HTTPS-yhteyden hoitava kirjasto (UUSI)
+#include <HTTPClient.h>       // Korkean tason HTTP/HTTPS-pyyntökirjasto (UUSI)
+#include <time.h>             // Ajan/kellon käsittely (NTP)
+#include "secrets.h"          // Wi-Fi-, OTA- ja API-salasanat
 
-const char* ssid = SECRET_SSID;             // Luetaan Wi-Fi-verkon nimi secrets.h-tiedostosta
-const char* password = SECRET_PASSWORD;     // Luetaan Wi-Fi-verkon salasana secrets.h-tiedostosta
+const char* ssid = SECRET_SSID;             // Wi-Fi-verkon nimi
+const char* password = SECRET_PASSWORD;     // Wi-Fi-verkon salasana
+const char* backendHost = SECRET_BACKEND_HOST; // Backendin osoite (esim. iot-temp-pipeline.onrender.com)
+const char* apiKey = SECRET_API_KEY;         // API-avain, joka todistaa backendille että pyyntö on aito
 
 // --- ANTURIN ASETUKSET ---
-#define ONE_WIRE_BUS 4              // Määritellään, että DS18B20-anturi on kytketty ESP32:n pinniin numero 4
-OneWire oneWire(ONE_WIRE_BUS);      // Luodaan OneWire-väyläolio käyttämään määriteltyä pinniä
-DallasTemperature sensors(&oneWire);// Luodaan lämpötila-anturiolio, joka käyttää yllä luotua OneWire-väylää
+#define ONE_WIRE_BUS 4
+OneWire oneWire(ONE_WIRE_BUS);
+DallasTemperature sensors(&oneWire);
 
-// Luodaan web-palvelin porttiin 80
-WebServer server(80);               // Luodaan HTTP-palvelinolio, joka kuuntelee standardiporttia 80 (normaali web-liikenne)
+WebServer server(80);
 
-// =================================================================
-// PUHTAAT LOGIIKKAFUNKTIOT — eivät kosketa Wi-Fi/anturia/palvelinta.
-// Näitä voi yksikkötestata PlatformIO+Unity-kehyksellä ilman laitteistoa.
-// =================================================================
+// --- LET'S ENCRYPT ISRG ROOT X1 -JUURIVARMENNE ---
+// Tämä on julkinen luottamustieto, ei salaisuus — Render käyttää Let's Encryptin
+// varmenteita, ja ESP32 tarvitsee tämän tunnistaakseen palvelimen varmenteen aidoksi.
+// TÄRKEÄ: tarkista tämä aina virallisesta lähteestä (letsencrypt.org/certs/isrgrootx1.pem)
+// ennen käyttöä, koska yksikin väärä merkki estää yhteyden toimimisen.
+const char* ROOT_CA_CERT = R"EOF(
+-----BEGIN CERTIFICATE-----
+MIIFazCCA1OgAwIBAgIRAIIQz7DSQONZRGPgu2OCiwAwDQYJKoZIhvcNAQELBQAw
+TzELMAkGA1UEBhMCVVMxKTAnBgNVBAoTIEludGVybmV0IFNlY3VyaXR5IFJlc2Vh
+cmNoIEdyb3VwMRUwEwYDVQQDEwxJU1JHIFJvb3QgWDEwHhcNMTUwNjA0MTEwNDM4
+WhcNMzUwNjA0MTEwNDM4WjBPMQswCQYDVQQGEwJVUzEpMCcGA1UEChMgSW50ZXJu
+ZXQgU2VjdXJpdHkgUmVzZWFyY2ggR3JvdXAxFTATBgNVBAMTDElTUkcgUm9vdCBY
+MTCCAiIwDQYJKoZIhvcNAQEBBQADggIPADCCAgoCggIBAK3oJHP0FDfzm54rVygc
+h77ct984kIxuPOZXoHj3dcKi/vVqbvYATyjb3miGbESTtrFj/RQSa78f0uoxmyF+
+0TM8ukj13Xnfs7j/EvEhmkvBioZxaUpmZmyPfjxwv60pIgbz5MDmgK7iS4+3mX6U
+A5/TR5d8mUgjU+g4rk8Kb4Mu0UlXjIB0ttov0DiNewNwIRt18jA8+o+u3dpjq+sW
+T8KOEUt+zwvo/7V3LvSye0rgTBIlDHCNAymg4VMk7BPZ7hm/ELNKjD+Jo2FR3qyH
+B5T0Y3HsLuJvW5iB4YlcNHlsdu87kGJ55tukmi8mxdAQ4Q7e2RCOFvu396j3x+UC
+B5iPNgiV5+I3lg02dZ77DnKxHZu8A/lJBdiB3QW0KtZB6awBdpUKD9jf1b0SHzUv
+KBds0pjBqAlkd25HN7rOrFleaJ1/ctaJxQZBKT5ZPt0m9STJEadao0xAH0ahmbWn
+OlFuhjuefXKnEgV4We0+UXgVCwOPjdAvBbI+e0ocS3MFEvzG6uBQE3xDk3SzynTn
+jh8BCNAw1FtxNrQHusEwMFxIt4I7mKZ9YIqioymCzLq9gwQbooMDQaHWBfEbwrbw
+qHyGO0aoSCqI3Haadr8faqU9GY/rOPNk3sgrDQoo//fb4hVC1CLQJ13hef4Y53CI
+rU7m2Ys6xt0nUW7/vGT1M0NPAgMBAAGjQjBAMA4GA1UdDwEB/wQEAwIBBjAPBgNV
+HRMBAf8EBTADAQH/MB0GA1UdDgQWBBR5tFnme7bl5AFzgAiIyBpY9umbbjANBgkq
+hkiG9w0BAQsFAAOCAgEAVR9YqbyyqFDQDLHYGmkgJykIrGF1XIpu+ILlaS/V9lZL
+ubhzEFnTIZd+50xx+7LSYK05qAvqFyFWhfFQDlnrzuBZ6brJFe+GnY+EgPbk6ZGQ
+3BebYhtF8GaV0nxvwuo77x/Py9auJ/GpsMiu/X1+mvoiBOv/2X/qkSsisRcOj/KK
+NFtY2PwByVS5uCbMiogziUwthDyC3+6WVwW6LLv3xLfHTjuCvjHIInNzktHCgKQ5
+ORAzI4JMPJ+GslWYHb4phowim57iaztXOoJwTdwJx4nLCgdNbOhdjsnvzqvHu7Ur
+TkXWStAmzOVyyghqpZXjFaH3pO3JLF+l+/+sKAIuvtd7u+Nxe5AW0wdeRlN8NwdC
+jNPElpzVmbUq4JUagEiuTDkHzsxHpFKVK7q4+63SM1N95R1NbdWhscdCb+ZAJzVc
+oyi3B43njTOQ5yOf+1CceWxG1bQVs5ZufpsMljq4Ui0/1lvh+wjChP4kqKOJ2qxq
+4RgqsahDYVvTH9w7jXbyLeiNdd8XM2w9U/t7y0Ff/9yi0GE44Za4rF2LN9d11TPA
+mRGunUHBcnWEvgJBQl9nJEiU0Zsnvgc/ubhPgXRR4Xq37Z0j4r7g1SgEEzwxA57d
+emyPxgcYxn/eR44/KJ4EBs+lVDR3veyJm+kXQ99b21/+jh5Xos1AnX5iItreGCc=
+-----END CERTIFICATE-----
+)EOF";
 
-// Tarkistaa, on lämpötila-arvo kelvollinen (anturi ei ole irti/vioittunut)
-bool isValidTemperature(float tempC) {                     // Funktio, joka ottaa lämpötilan parametrina sisään
-  return tempC != DEVICE_DISCONNECTED_C;                    // Palauttaa true, jos arvo EI ole anturin virhearvo
-}
-
-// Muotoilee lämpötilan tekstiksi kahden desimaalin tarkkuudella
-String formatTemperature(float tempC) {                    // Funktio, joka muotoilee lämpötilan tekstimuotoon
-  return String(tempC, 2);                                   // Palauttaa lämpötilan merkkijonona, 2 desimaalia
-}
-
-// Muodostaa nykyisen ajan ISO 8601 -muotoisena aikaleimana ("unknown" jos kello ei ole synkassa)
-String getTimestamp() {                                     // Funktio, joka palauttaa nykyisen UTC-ajan tekstimuodossa
-  struct tm timeinfo;                                        // Luodaan rakenne, johon kellonaika tallennetaan
-  if (!getLocalTime(&timeinfo)) {                             // Yritetään hakea aika; jos epäonnistuu...
-    return "unknown";                                          // ...palautetaan "unknown", jotta JSON ei mene rikki
-  }
-  char buf[26];                                               // Puskuri muotoillulle aikaleimalle (1 merkki enemmän Z:lle)
-  strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &timeinfo); // Muotoillaan UTC-aika ISO 8601 -tyyliin, Z = UTC-merkki
-  return String(buf);                                         // Palautetaan muotoiltu UTC-aikaleima
-}
-
-// Rakentaa koko JSON-vastauksen valmiista, jo luetuista arvoista — EI lue anturia itse.
-// Tämä on testattavuuden kannalta tärkein funktio: sille voi antaa mitä tahansa
-// arvoja testissä, eikä se koskaan kutsu Wi-Fi/anturi/palvelin-koodia.
-String buildJsonResponse(float tempC, bool sensorOk, String timestamp) { // Ottaa lämpötilan, tilan ja ajan parametreina
-  String json = "{";                                          // Aloitetaan JSON-merkkijonon rakentaminen aaltosulkeella
-  json += "\"device\":\"wemos-mittari\",";                    // Lisätään JSON:iin kenttä "device" laitteen nimellä
-  json += "\"timestamp\":\"" + timestamp + "\",";              // Lisätään JSON:iin kenttä "timestamp" annetulla aikaleimalla
-  if (sensorOk) {                                             // Tarkistetaan onko anturi kunnossa (annettu parametrina)
-    json += "\"status\":\"OK\",";                                // Jos kunnossa, merkitään tila "OK"
-    json += "\"temperature\":" + formatTemperature(tempC);       // Lisätään lämpötila numerona (ei lainausmerkeissä, JSON-luku)
-  } else {                                                    // Jos anturi ei ollut kunnossa...
-    json += "\"status\":\"ERROR\",";                             // ...merkitään tila "ERROR"
-    json += "\"temperature\":null";                              // ...ja lämpötilaksi JSON null-arvo (ei numeroa)
-  }
-  json += "}";                                                // Suljetaan JSON-olio loppukaarisulkeella
-  return json;                                                // Palautetaan koko JSON-merkkijono kutsujalle
-}
+// --- AJASTUS PILVILÄHETYKSELLE ---
+unsigned long lastUploadTime = 0;                  // Milloin data lähetettiin viimeksi (millis()-aikaleima)
+const unsigned long UPLOAD_INTERVAL = 10UL * 60UL * 1000UL; // 10 minuuttia millisekunteina (10 * 60 * 1000)
 
 // =================================================================
-// LAITTEISTORIIPPUVAISET FUNKTIOT — näitä ei voi yksikkötestata ilman
-// oikeaa ESP32:ta ja anturia, koska ne kutsuvat sensors/server-olioita.
+// PUHTAAT LOGIIKKAFUNKTIOT
 // =================================================================
 
+bool isValidTemperature(float tempC) {                     // Tarkistaa onko lämpötila kelvollinen
+  return tempC != DEVICE_DISCONNECTED_C && tempC != 85.0;    // Pois suljetaan myös DS18B20:n tunnettu virhearvo 85.0
+}
+
+String formatTemperature(float tempC) {                     // Muotoilee lämpötilan tekstiksi
+  return String(tempC, 2);
+}
+
+String getTimestamp() {                                      // Palauttaa nykyisen UTC-ajan ISO 8601 -muodossa
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) {
+    return "unknown";
+  }
+  char buf[26];
+  strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &timeinfo); // Z = UTC-merkki
+  return String(buf);
+}
+
+String buildJsonResponse(float tempC, bool sensorOk, String timestamp) { // Rakentaa JSON-vastauksen /api-reitille
+  String json = "{";
+  json += "\"device\":\"wemos-mittari\",";
+  json += "\"timestamp\":\"" + timestamp + "\",";
+  if (sensorOk) {
+    json += "\"status\":\"OK\",";
+    json += "\"temperature\":" + formatTemperature(tempC);
+  } else {
+    json += "\"status\":\"ERROR\",";
+    json += "\"temperature\":null";
+  }
+  json += "}";
+  return json;
+}
+
+// Rakentaa JSON-rungon, joka lähetetään backendille POST-pyynnössä.
+// Huom: kentät ovat camelCase-muodossa (deviceId, measuredAt), koska
+// server.js:n koodi lukee req.body:stä juuri näillä nimillä.
+String buildUploadPayload(float tempC, bool sensorOk, String timestamp) { // Rakentaa POST-pyynnön JSON-rungon
+  String json = "{";
+  json += "\"deviceId\":\"wemos-mittari\",";
+  json += "\"status\":\"" + String(sensorOk ? "OK" : "ERROR") + "\",";
+  json += "\"temperature\":" + (sensorOk ? formatTemperature(tempC) : "null") + ",";
+  json += "\"measuredAt\":\"" + timestamp + "\"";
+  json += "}";
+  return json;
+}
+
 // =================================================================
-// WI-FI-YHTEYDEN VALVONTA — tarkistaa yhteyden ja yrittää korjata sen
+// LAITTEISTORIIPPUVAISET FUNKTIOT
 // =================================================================
 
-unsigned long lastWifiCheck = 0;              // Tallentaa milloin Wi-Fi-tila viimeksi tarkistettiin (millis()-aikaleima)
-unsigned long wifiDownSince = 0;              // Tallentaa milloin yhteys havaittiin poikki (0 = yhteys on kunnossa)
-const unsigned long WIFI_CHECK_INTERVAL = 10000;   // Tarkistetaan yhteys 10 sekunnin välein, ei jatkuvasti
-const unsigned long WIFI_RESTART_THRESHOLD = 120000; // Jos yhteys on poikki yli 2 minuuttia, käynnistetään laite kokonaan uudelleen
+unsigned long lastWifiCheck = 0;
+unsigned long wifiDownSince = 0;
+const unsigned long WIFI_CHECK_INTERVAL = 10000;
+const unsigned long WIFI_RESTART_THRESHOLD = 120000;
 
-void checkWifiConnection() {                              // Funktio, joka tarkistaa ja korjaa Wi-Fi-yhteyden tarvittaessa
-  if (millis() - lastWifiCheck < WIFI_CHECK_INTERVAL) {     // Tarkistetaan onko tarkistusväli vielä kesken
-    return;                                                  // Jos kyllä, poistutaan funktiosta tekemättä mitään (säästää suorituskykyä)
+void checkWifiConnection() {                              // Tarkistaa ja korjaa Wi-Fi-yhteyden tarvittaessa
+  if (millis() - lastWifiCheck < WIFI_CHECK_INTERVAL) {
+    return;
   }
-  lastWifiCheck = millis();                                 // Päivitetään viimeisin tarkistusajankohta nykyhetkeen
+  lastWifiCheck = millis();
 
-  if (WiFi.status() == WL_CONNECTED) {                      // Tarkistetaan, onko Wi-Fi-yhteys kunnossa
-    wifiDownSince = 0;                                        // Jos kunnossa, nollataan "yhteys poikki" -ajanlasku
-    return;                                                   // Poistutaan funktiosta, ei tarvita toimenpiteitä
-  }
-
-  Serial.println("Wi-Fi-yhteys poikki, yritetään yhdistää uudelleen...");  // Ilmoitetaan ongelmasta sarjamonitoriin
-
-  if (wifiDownSince == 0) {                                 // Jos tämä on ensimmäinen kerta kun yhteys havaittiin poikki...
-    wifiDownSince = millis();                                 // ...tallennetaan ajanhetki, jolloin yhteys katkesi
+  if (WiFi.status() == WL_CONNECTED) {
+    wifiDownSince = 0;
+    return;
   }
 
-  WiFi.disconnect();                                        // Katkaistaan nykyinen (rikkinäinen) yhteys siististi
-  WiFi.begin(ssid, password);                               // Yritetään yhdistää uudelleen samoilla tunnuksilla
+  Serial.println("Wi-Fi-yhteys poikki, yritetään yhdistää uudelleen...");
 
-  if (millis() - wifiDownSince > WIFI_RESTART_THRESHOLD) {  // Jos yhteys on ollut poikki liian pitkään uudelleenyrityksistä huolimatta...
-    Serial.println("Wi-Fi ei palautunut, käynnistetään laite kokonaan uudelleen...");  // Ilmoitetaan viimeisestä keinosta
-    delay(1000);                                              // Pieni viive, jotta Serial-tulostus ehtii lähteä ulos ennen uudelleenkäynnistystä
-    ESP.restart();                                            // Käynnistetään ESP32 kokonaan uudelleen (sama kuin virtojen katko/kytkentä)
+  if (wifiDownSince == 0) {
+    wifiDownSince = millis();
+  }
+
+  WiFi.disconnect();
+  WiFi.begin(ssid, password);
+
+  if (millis() - wifiDownSince > WIFI_RESTART_THRESHOLD) {
+    Serial.println("Wi-Fi ei palautunut, käynnistetään laite kokonaan uudelleen...");
+    delay(1000);
+    ESP.restart();
   }
 }
 
-// 1. Palauttaa pelkän lämpötilan tekstinä (esim. "22.50")
-void handleTemp() {                                  // Funktio, joka ajetaan kun selain/asiakas pyytää osoitetta /temp
-  sensors.requestTemperatures();                      // Pyydetään anturilta uusi lämpötilamittaus
-  float tempC = sensors.getTempCByIndex(0);           // Luetaan ensimmäisen (indeksi 0) anturin lämpötila celsiusasteina
-  if (isValidTemperature(tempC)) {                    // Käytetään eriytettyä funktiota arvon kelvollisuuden tarkistukseen
-    server.send(200, "text/plain", formatTemperature(tempC)); // Lähetetään HTTP 200 -vastaus, lämpötila muotoiltuna tekstinä
-  } else {                                            // Jos anturi oli irti tai ei vastannut...
-    server.send(500, "text/plain", "Error: Sensor disconnected"); // ...lähetetään HTTP 500-virhevastaus selkeällä viestillä
+// Lähettää mittauksen backendille HTTPS POST -pyynnöllä
+void uploadMeasurement(float tempC, bool sensorOk, String timestamp) { // Ottaa lämpötilan, tilan ja aikaleiman
+  WiFiClientSecure client;                                  // Luodaan suojattu (HTTPS) yhteysolio
+  client.setCACert(ROOT_CA_CERT);                            // Asetetaan luotettu juurivarmenne yhteydelle
+
+  HTTPClient https;                                          // Luodaan korkean tason HTTPS-pyyntöolio
+  String url = "https://" + String(backendHost) + "/measurements"; // Rakennetaan täysi osoite
+
+  if (!https.begin(client, url)) {                           // Aloitetaan yhteys annettuun osoitteeseen
+    Serial.println("HTTPS-yhteyden aloitus epäonnistui");      // Jos epäonnistuu, tulostetaan virhe ja lopetetaan
+    return;
+  }
+
+  https.addHeader("Content-Type", "application/json");       // Kerrotaan palvelimelle, että runko on JSON-muotoa
+  https.addHeader("X-API-Key", apiKey);                       // Lisätään API-avain otsikkoon, jotta backend hyväksyy pyynnön
+
+  String payload = buildUploadPayload(tempC, sensorOk, timestamp); // Rakennetaan lähetettävä JSON-data
+  int httpCode = https.POST(payload);                         // Lähetetään POST-pyyntö ja saadaan HTTP-statuskoodi takaisin
+
+  if (httpCode > 0) {                                         // Jos saatiin jokin vastaus (ei verkkovirhettä)...
+    Serial.printf("Pilvilähetys: HTTP %d\n", httpCode);          // ...tulostetaan statuskoodi (esim. 201 = onnistui)
+    String response = https.getString();                       // Luetaan palvelimen vastauksen runko
+    Serial.println(response);                                   // Tulostetaan se debug-tarkoituksiin
+  } else {                                                    // Jos pyyntö epäonnistui kokonaan (esim. ei yhteyttä)...
+    Serial.printf("Pilvilähetys epäonnistui: %s\n", https.errorToString(httpCode).c_str()); // Tulostetaan virhe
+  }
+
+  https.end();                                                // Suljetaan yhteys siististi
+}
+
+void handleTemp() {
+  sensors.requestTemperatures();
+  float tempC = sensors.getTempCByIndex(0);
+  if (isValidTemperature(tempC)) {
+    server.send(200, "text/plain", formatTemperature(tempC));
+  } else {
+    server.send(500, "text/plain", "Error: Sensor disconnected");
   }
 }
 
-// 2. Palauttaa tiedot JSON-muodossa käyttöliittymää varten
-void handleJsonApi() {                                       // Funktio, joka ajetaan kun selain/asiakas pyytää osoitetta /api
-  sensors.requestTemperatures();                              // Pyydetään anturilta uusi lämpötilamittaus
-  float tempC = sensors.getTempCByIndex(0);                   // Luetaan ensimmäisen anturin lämpötila celsiusasteina
-  bool sensorOk = isValidTemperature(tempC);                   // Tarkistetaan kelvollisuus eriytetyllä funktiolla
-  String timestamp = getTimestamp();                           // Haetaan nykyinen aikaleima eriytetyllä funktiolla
-  String json = buildJsonResponse(tempC, sensorOk, timestamp); // Rakennetaan JSON-vastaus eriytetyllä, testattavalla funktiolla
-  server.send(200, "application/json", json);                 // Lähetetään koko JSON-merkkijono HTTP 200 -vastauksena
+void handleJsonApi() {
+  sensors.requestTemperatures();
+  float tempC = sensors.getTempCByIndex(0);
+  bool sensorOk = isValidTemperature(tempC);
+  String timestamp = getTimestamp();
+  String json = buildJsonResponse(tempC, sensorOk, timestamp);
+  server.send(200, "application/json", json);
 }
 
-void setup() {                                  // setup() ajetaan vain kerran, kun ESP32 käynnistyy
-  Serial.begin(115200);                          // Käynnistetään sarjaliikenne 115200 baudin nopeudella (USB-debug-tulostukseen)
-  sensors.begin();                               // Alustetaan DallasTemperature-kirjasto käyttövalmiiksi
+void setup() {
+  Serial.begin(115200);
+  sensors.begin();
 
-  // Yhdistetään Wi-Fi-verkkoon
-  WiFi.begin(ssid, password);                    // Aloitetaan Wi-Fi-yhteyden muodostus annetulla verkon nimellä ja salasanalla
-  while (WiFi.status() != WL_CONNECTED) {        // Odotetaan silmukassa, kunnes yhteys on muodostunut
-    delay(500);                                   // Pieni tauko, jotta silmukka ei pyöri turhan tiiviisti
-    Serial.print(".");                            // Tulostetaan piste sarjamonitoriin merkiksi siitä, että yhä odotetaan
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
   }
-  Serial.println("\nWi-Fi yhdistetty!");          // Kun yhteys on muodostunut, tulostetaan vahvistusviesti
-  Serial.print("IP-osoite: ");                    // Tulostetaan teksti ennen IP-osoitetta
-  Serial.println(WiFi.localIP());                 // Tulostetaan laitteen saama paikallinen IP-osoite
+  Serial.println("\nWi-Fi yhdistetty!");
+  Serial.print("IP-osoite: ");
+  Serial.println(WiFi.localIP());
 
-  // --- NTP-AJAN ASETUS ---
-  configTime(0, 0, "pool.ntp.org", "time.nist.gov");           // Asetetaan aikavyöhyke (UTC+0) ja NTP-palvelimet
-  Serial.println("Synkronoidaan aikaa NTP:stä...");            // Tulostetaan tila: aikaa yritetään hakea netistä
-  struct tm timeinfo;                                          // Luodaan rakenne saadulle ajalle
-  unsigned long ntpStart = millis();                           // Tallennetaan ajanhetki, jolloin NTP-yritys alkoi (timeoutia varten)
-  while (!getLocalTime(&timeinfo)) {                           // Yritetään hakea aikaa, kunnes se onnistuu...
-    Serial.print(".");                                          // ...tulostetaan piste merkiksi yrityksestä
-    delay(500);                                                 // Pieni tauko yritysten välillä
-    if (millis() - ntpStart > 10000) {                          // Jos yli 10 sekuntia on kulunut ilman onnistumista...
-      Serial.println("\nNTP-aikaa ei saatu, jatketaan ilman sitä."); // ...kerrotaan käyttäjälle epäonnistumisesta
-      break;                                                     // ...ja poistutaan silmukasta, jotta laite ei jää pysyvästi jumiin
+  configTime(0, 0, "pool.ntp.org", "time.nist.gov");          // Puhdas UTC, ei aikavyöhykesiirtymää
+  Serial.println("Synkronoidaan aikaa NTP:stä...");
+  struct tm timeinfo;
+  unsigned long ntpStart = millis();
+  while (!getLocalTime(&timeinfo)) {
+    Serial.print(".");
+    delay(500);
+    if (millis() - ntpStart > 10000) {
+      Serial.println("\nNTP-aikaa ei saatu, jatketaan ilman sitä.");
+      break;
     }
   }
-  if (timeinfo.tm_year > 0) {                                  // Tarkistetaan saatiinko aika oikeasti asetettua (vuosi on järkevä)
-    Serial.println("\nAika synkronoitu!");                      // Jos kyllä, ilmoitetaan onnistumisesta
+  if (timeinfo.tm_year > 0) {
+    Serial.println("\nAika synkronoitu!");
   }
 
-  // Määritetään mDNS, jotta laitteeseen pääsee käsiksi osoitteella http://wemos-mittari.local
-  if (MDNS.begin("wemos-mittari")) {              // Yritetään käynnistää mDNS-palvelu annetulla nimellä; palauttaa true onnistuessaan
-    Serial.println("mDNS käynnistetty (wemos-mittari.local)"); // Ilmoitetaan onnistumisesta sarjamonitoriin
+  if (MDNS.begin("wemos-mittari")) {
+    Serial.println("mDNS käynnistetty (wemos-mittari.local)");
   }
 
-  // Reititetään API-osoitteet oikeisiin toimintoihin
-  server.on("/temp", handleTemp);                 // Kun joku pyytää osoitetta /temp, ajetaan handleTemp()-funktio
-  server.on("/api", handleJsonApi);                // Kun joku pyytää osoitetta /api, ajetaan handleJsonApi()-funktio
-  server.begin();                                  // Käynnistetään web-palvelin kuuntelemaan pyyntöjä
-  Serial.println("API-palvelin käynnistetty.");    // Ilmoitetaan sarjamonitoriin, että palvelin on käynnissä
+  server.on("/temp", handleTemp);
+  server.on("/api", handleJsonApi);
+  server.begin();
+  Serial.println("API-palvelin käynnistetty.");
 
-  // --- ALUSTETAAN OTA (LANGATON PÄIVITYS) ---
-  ArduinoOTA.setHostname("wemos-mittari");         // Asetetaan laitteen nimi, jolla se näkyy OTA-laitelistassa
-  ArduinoOTA.setPassword(SECRET_OTAPASSWORD);      // Asetetaan OTA-salasana secrets.h:sta, joka vaaditaan päivityksen aloittamiseen
-  ArduinoOTA.onStart([]() {                        // Määritellään mitä tehdään, kun OTA-päivitys alkaa (anonyymi funktio)
-    Serial.println("Langaton päivitys alkaa...");   // Tulostetaan ilmoitus päivityksen alkamisesta
+  ArduinoOTA.setHostname("wemos-mittari");
+  ArduinoOTA.setPassword(SECRET_OTAPASSWORD);
+  ArduinoOTA.onStart([]() {
+    Serial.println("Langaton päivitys alkaa...");
   });
-  ArduinoOTA.onEnd([]() {                          // Määritellään mitä tehdään, kun OTA-päivitys päättyy onnistuneesti
-    Serial.println("\nValmis!");                     // Tulostetaan ilmoitus päivityksen valmistumisesta
+  ArduinoOTA.onEnd([]() {
+    Serial.println("\nValmis!");
   });
-  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) { // Määritellään mitä tehdään päivityksen edistyessä
-    Serial.printf("Edistyminen: %u%%\r", (progress / (total / 100)));    // Tulostetaan edistyminen prosentteina samalle rivillä (\r)
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    Serial.printf("Edistyminen: %u%%\r", (progress / (total / 100)));
   });
-  ArduinoOTA.onError([](ota_error_t error) {       // Määritellään mitä tehdään, jos OTA-päivityksessä tapahtuu virhe
-    Serial.printf("Virhe [%u]: ", error);            // Tulostetaan virhekoodi sarjamonitoriin
+  ArduinoOTA.onError([](ota_error_t error) {
+    Serial.printf("Virhe [%u]: ", error);
   });
-  ArduinoOTA.begin();                              // Käynnistetään OTA-palvelu kuuntelemaan tulevia päivityksiä
-  Serial.println("OTA-päivitys valmiudessa.");      // Ilmoitetaan, että laite on valmis vastaanottamaan langattomia päivityksiä
+  ArduinoOTA.begin();
+  Serial.println("OTA-päivitys valmiudessa.");
 }
 
-void loop() {                        // loop() ajetaan toistuvasti, niin kauan kuin laitteeseen on virta kytkettynä
-  checkWifiConnection();              // Tarkistetaan ja korjataan Wi-Fi-yhteys tarvittaessa (katso funktio yllä)
-  server.handleClient();              // Tarkistetaan ja käsitellään mahdolliset saapuneet HTTP-pyynnöt (esim. /api, /temp)
-  ArduinoOTA.handle();                // Tarkistetaan, yrittääkö joku aloittaa langattoman koodipäivityksen juuri nyt
-  delay(2);                           // Pieni 2 millisekunnin viive, joka pitää ESP32:n taustaprosessit vakaina
+void loop() {
+  checkWifiConnection();                       // Tarkistetaan ja korjataan Wi-Fi-yhteys tarvittaessa
+  server.handleClient();                       // Käsitellään saapuvat HTTP-pyynnöt (/temp, /api)
+  ArduinoOTA.handle();                         // Kuunnellaan langattomia koodipäivityksiä
+
+  if (millis() - lastUploadTime >= UPLOAD_INTERVAL || lastUploadTime == 0) { // Jos 10 min on kulunut TAI ekakerta
+    lastUploadTime = millis();                                                // Päivitetään viimeisin lähetysajankohta
+    sensors.requestTemperatures();                                            // Pyydetään uusi lämpötilamittaus
+    float tempC = sensors.getTempCByIndex(0);                                 // Luetaan lämpötila
+    bool sensorOk = isValidTemperature(tempC);                                // Tarkistetaan kelvollisuus
+    String timestamp = getTimestamp();                                        // Haetaan nykyinen UTC-aikaleima
+    uploadMeasurement(tempC, sensorOk, timestamp);                             // Lähetetään data backendille
+  }
+
+  delay(2);
 }
