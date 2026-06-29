@@ -2,8 +2,10 @@ const express = require('express');                          // Tuodaan Express-
 const { saveMeasurement, getRecentMeasurements, getDevice } = require('./database'); // Tuodaan tietokantafunktiot
 
 const app = express();                                        // Luodaan Express-sovellusolio
+const cors = require('cors');
 const PORT = process.env.PORT || 3000;                        // Render asettaa PORT-muuttujan automaattisesti
 
+app.use(cors());
 app.use(express.json());                                      // Otetaan käyttöön JSON-rungon automaattinen jäsennys
 
 // Middleware: tarkistaa että pyynnössä on oikea API-avain
