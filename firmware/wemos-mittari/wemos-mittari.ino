@@ -8,6 +8,7 @@
 #include <WiFiClientSecure.h> // HTTPS-yhteyden hoitava kirjasto (UUSI)
 #include <HTTPClient.h>       // Korkean tason HTTP/HTTPS-pyyntökirjasto (UUSI)
 #include <time.h>             // Ajan/kellon käsittely (NTP)
+#include "esp_wifi.h"         // Poistetaan WiFin virransäästö
 #include "secrets.h"          // Wi-Fi-, OTA- ja API-salasanat
 
 const char* ssid = SECRET_SSID;             // Wi-Fi-verkon nimi
@@ -51,8 +52,6 @@ IQDspFWa3fj7nLgouSdkcPy1SdOR2AGm9OQWs7veyXsBwA==
 // --- AJASTUS PILVILÄHETYKSELLE ---
 unsigned long lastUploadTime = 0;                  // Milloin data lähetettiin viimeksi (millis()-aikaleima)
 const unsigned long UPLOAD_INTERVAL = 10UL * 60UL * 1000UL; // 10 minuuttia millisekunteina (10 * 60 * 1000)
-const int MAX_RETRIES = 4;          // Yritetään lähetystä enintään 4 kertaa ennen luovuttamista
-const unsigned long RETRY_DELAY = 20000; // 20 sekuntia uudelleenyritysten välillä — antaa Render-palvelimen (ilmaistaso) aikaa herätä lepotilasta
 
 // =================================================================
 // PUHTAAT LOGIIKKAFUNKTIOT
@@ -148,8 +147,8 @@ bool uploadMeasurement(float tempC, bool sensorOk, String timestamp) { // Palaut
   HTTPClient https;                                                     // Luodaan korkean tason HTTPS-pyyntöolio
   String url = "https://" + String(backendHost) + "/measurements";     // Rakennetaan täysi osoite
   Serial.printf("Yhdistetään: %s\n", url.c_str());  // Tulostetaan täysi URL varmistukseksi
-  client.setTimeout(15000); // 15 sekuntia timeoutiksi
-  https.setTimeout(15000);  // sama HTTP-tasolle
+  client.setTimeout(40000); // 40 sekuntia timeoutiksi
+  https.setTimeout(40000);  // sama HTTP-tasolle
   if (!https.begin(client, url)) {                                      // Aloitetaan yhteys annettuun osoitteeseen
     Serial.println("HTTPS-yhteyden aloitus epäonnistui");               // Jos epäonnistuu, tulostetaan virhe...
     return false;                                                        // ...ja palautetaan epäonnistuminen
@@ -198,6 +197,7 @@ void setup() {
   sensors.begin();
 
   WiFi.begin(ssid, password);
+  esp_wifi_set_ps(WIFI_PS_NONE);   // Sammutetaan Wi-Fi-virransäästö, pitäisi parantaa yhteyden vakautta
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
@@ -261,21 +261,14 @@ void loop() {
     bool sensorOk = isValidTemperature(tempC);                                // Tarkistetaan kelvollisuus
     String timestamp = getTimestamp();                                        // Haetaan nykyinen UTC-aikaleima
     // Render-palvelin (ilmaistaso) nukahtaa ~15 min käyttämättömyyden jälkeen.
-    // Ensimmäinen pyyntö herättää sen, mutta herätys kestää 20-30 s — retry-logiikka
-    // antaa palvelimelle aikaa herätä sen sijaan että luovutettaisiin heti.
-    for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-      Serial.printf("Lähetysyritys %d/%d\n", attempt, MAX_RETRIES); // Tulostetaan monesko yritys menossa
-      bool success = uploadMeasurement(tempC, sensorOk, timestamp);  // Yritetään lähettää data backendille
-      if (success) break;                                             // Jos onnistui, poistutaan silmukasta
-      if (attempt < MAX_RETRIES) {                                    // Jos yrityksiä on vielä jäljellä...
-        Serial.printf("Yritetään uudelleen %lu s päästä...\n", RETRY_DELAY / 1000); // ...kerrotaan käyttäjälle odotusaika
-        unsigned long retryStart = millis();                          // Tallennetaan odotuksen alkuaika
-        while (millis() - retryStart < RETRY_DELAY) {                 // Odotetaan 20 s, mutta ei jäädytä laitetta...
-          server.handleClient();                                       // ...vaan palvellaan /temp ja /api -pyyntöjä odotuksen aikana
-          ArduinoOTA.handle();                                         // ...ja kuunnellaan OTA-päivityksiä odotuksen aikana
-          delay(2);                                                    // Pieni viive jotta prosessori ei pyöri täydellä teholla
-        }
-      }
+    // Pitkä timeout (40s) HTTPS-yhteydessä antaa palvelimelle aikaa herätä yhden
+    // yrityksen sisällä. Backend on idempotentti (ON CONFLICT DO NOTHING Neonissa),
+    // joten satunnainen epäonnistunut lähetys on harmiton — data tallentuu
+    // viimeistään seuraavalla 10 min kierroksella, eikä koskaan tupla-kirjaudu.
+    Serial.println("Lähetetään mittaus...");                                  // Tulostetaan lähetyksen alkaminen
+    bool success = uploadMeasurement(tempC, sensorOk, timestamp);              // Yritetään lähettää data backendille
+    if (!success) {                                                           // Jos lähetys epäonnistui...
+      Serial.println("Lähetys epäonnistui, yritetään seuraavalla 10 min kierroksella"); // ...kerrotaan ettei hätää, yritetään myöhemmin
     }
   }
 
