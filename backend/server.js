@@ -32,6 +32,11 @@ app.post('/measurements', checkApiKey, async (req, res) => {   // checkApiKey aj
     }
 
     const saved = await saveMeasurement({ deviceId, temperature, status, measuredAt }); // Tallennetaan tietokantaan
+    
+    if (!saved) {                                          // Jos null, tallennus ohitettiin koska duplikaatti
+      return res.status(200).json({ message: 'Mittaus oli jo tallennettu (duplikaatti ohitettu)' });
+    }
+    
     res.status(201).json({ message: 'Mittaus tallennettu', data: saved }); // Onnistumisvastaus
   } catch (error) {                                             // Jos jokin menee pieleen...
     console.error('Virhe mittauksen tallennuksessa:', error);     // ...lokitetaan koko virhe-olio (opittu aiemmasta!)

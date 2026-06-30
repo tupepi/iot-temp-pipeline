@@ -11,10 +11,11 @@ async function saveMeasurement({ deviceId, temperature, status, measuredAt }) { 
   const result = await pool.query(                          // Suoritetaan SQL-kysely ja odotetaan vastausta
     `INSERT INTO measurements (device_id, temperature, status, measured_at)
      VALUES ($1, $2, $3, $4)
+     ON CONFLICT (device_id, measured_at) DO NOTHING
      RETURNING *`,                                           // $1, $2, jne. ovat parametripaikkoja (estävät SQL-injektiota)
     [deviceId, temperature, status, measuredAt]               // Annetaan parametrien oikeat arvot tässä järjestyksessä
   );
-  return result.rows[0];                                      // Palautetaan lisätty rivi (RETURNING * antaa sen takaisin)
+  return result.rows[0] || null; ;                                      // Palautetaan lisätty rivi (RETURNING * antaa sen takaisin)
 }
 
 // Hakee laitteen viimeisimmät mittaukset annetulta aikaväliltä
