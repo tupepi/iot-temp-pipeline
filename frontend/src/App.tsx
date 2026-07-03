@@ -1,92 +1,149 @@
-import { useState, useEffect } from 'react';  // Tuodaan Reactin tilan- ja sivuvaikutusten hallintatyökalut
+import { useState, useEffect } from 'react';
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from 'recharts'; // Tuodaan Recharts-komponentit
+import {
+  type Measurement,
+  buildInterpolatedChartData,
+  calculateStats,
+  buildXAxisTicks,
+} from './utils/chartUtils';
+import { fetchDevice, fetchMeasurements } from './api/backendApi';
+import { motion } from 'framer-motion';
 
-// Määritellään minkä muotoista dataa odotamme backendilta (TypeScript-tyyppi)
-interface Device {                              // Kuvaa yhden laitteen tietorakenteen
-  device_id: string;                             // Laitteen tunniste, aina tekstiä
-  location: string;                               // Laitteen sijainti, aina tekstiä
-  created_at: string;                             // Rekisteröintiaika, aina tekstiä (ISO-muotoinen päivämäärä)
+interface Device {
+  device_id: string;
+  location: string;
+  created_at: string;
 }
 
-// Määritellään mittauksen tietorakenne
-interface Measurement {
-  measurement_id: number;        // Mittauksen yksilöllinen tunniste
-  device_id: string;             // Miltä laitteelta mittaus tuli
-  temperature: number;           // Mitattu lämpötila celsiusasteina
-  status: string;                // Anturin tila mittaushetkellä (OK / ERROR)
-  measured_at: string;           // Mittausaika ISO-muodossa
-}
+function App() {
+  const [device, setDevice] = useState<Device | null>(null);
+  const [deviceLoading, setDeviceLoading] = useState(true);
+  const [measurements, setMeasurements] = useState<Measurement[]>([]);
+  const [measurementsLoading, setMeasurementsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-const BACKEND_URL = 'https://iot-temp-pipeline.onrender.com'; // Backendin osoite, vakiona ylhäällä helppoa muokkausta varten
+  useEffect(() => {
+    fetchDevice('wemos-mittari')
+      .then(setDevice)
+      .catch((err) => setError(err.message))
+      .finally(() => setDeviceLoading(false));
+  }, []);
 
-function App() {                                  // Pääkomponentti, jonka React näyttää ruudulla
-  const [error, setError] = useState<string | null>(null); // Tila mahdolliselle virheelle (alussa ei virhettä)
-  
-  const [device, setDevice] = useState<Device | null>(null); // Tila laitteen tiedoille: alussa null (ei vielä dataa)
-  const [deviceLoading, setDeviceLoading] = useState(true);    // Tila sille, ladataanko dataa juuri nyt (alussa true)
+  useEffect(() => {
+    fetchMeasurements('wemos-mittari')
+      .then(setMeasurements)
+      .catch((err) => setError(err.message))
+      .finally(() => setMeasurementsLoading(false));
+  }, []);
 
-  useEffect(() => {                                // Ajetaan tämä koodi automaattisesti, kun komponentti ilmestyy
-    fetch(`${BACKEND_URL}/devices/wemos-mittari`)    // Tehdään HTTP GET -pyyntö backendin laitetieto-osoitteeseen
-      .then((response) => {                          // Kun vastaus saadaan...
-        if (!response.ok) {                           // ...tarkistetaan onnistuiko pyyntö (esim. ei 404/500)
-          throw new Error(`Palvelin vastasi: ${response.status}`); // Jos ei onnistunut, heitetään virhe
-        }
-        return response.json();                       // Muutetaan vastaus JSON-olioksi
-      })
-      .then((data: Device) => {                      // Kun JSON on jäsennetty...
-        setDevice(data);                               // ...tallennetaan se tilaan näytettäväksi
-        setDeviceLoading(false);                             // ...ja merkitään lataus valmiiksi
-      })
-      .catch((err) => {                               // Jos jokin yllä menee pieleen (verkko, palvelin, jne.)...
-        setError(err.message);                          // ...tallennetaan virheviesti tilaan
-        setDeviceLoading(false);                              // ...ja merkitään lataus valmiiksi (vaikka epäonnistuneesti)
-      });
-  }, []);                                            // Tyhjä riippuvuuslista = ajetaan vain kerran, komponentin ilmestyessä
-
-const [measurements, setMeasurements] = useState<Measurement[]>([]); // Tila mittauslistalle: alussa tyhjä taulukko
-const [measurementsLoading, setMeasurementsLoading] = useState(true);
-
-useEffect(() => {                                                       // Ajetaan kerran komponentin ilmestyessä
-  fetch(`${BACKEND_URL}/measurements/wemos-mittari`)                    // Haetaan kaikki laitteen mittaukset
-    .then((response) => {
-      if (!response.ok) {
-        throw new Error(`Palvelin vastasi: ${response.status}`);
-      }
-      return response.json();
-    })
-    .then((data) => {
-      setMeasurements(data.measurements);  // Otetaan vain measurements-taulukko
-    })
-    .catch((err) => {
-      setError(err.message);                                            // Käytetään samaa virhetilaa kuin laitehaussa
-      setMeasurementsLoading(false);                                    // Merkitään mittauslataus valmiiksi (vaikka epäonnistuneesti)
-    });
-}, []);                                                                 // Tyhjä riippuvuuslista = ajetaan vain kerran
-
-  if (deviceLoading && measurementsLoading) {                                     // Jos data on yhä latautumassa...
-    return <p>Ladataan...</p>;                         // ...näytetään yksinkertainen latausviesti
+  if (deviceLoading || measurementsLoading) {
+    // Odotetaan että MOLEMMAT ovat valmiita (korjattu: && → ||)
+    return (
+      <div className="min-h-screen dark:bg-gray-900 flex flex-col items-center justify-center gap-3">
+        <div className="w-8 h-8 border-4 border-gray-300 border-t-blue-400 rounded-full animate-spin" />
+        <p className="text-sm dark:text-gray-400">Ladataan...</p>
+        <p className="text-xs dark:text-gray-600">Palvelin — ilmaistaso.</p>
+      </div>
+    );
   }
 
-  if (error) {                                       // Jos haku epäonnistui...
-    return <p>Virhe: {error}</p>;                       // ...näytetään virheviesti
+  if (error) {
+    return <p>Virhe: {error}</p>;
   }
 
-  return (                                            // Jos kaikki onnistui...
-    <div>
-      <h1>IoT Temp Pipeline</h1>                        {/* Otsikko */}
-      <p>Laite: {device?.device_id}</p>                  {/* Näytetään laitteen tunniste */}
-      <p>Sijainti: {device?.location}</p>                 {/* Näytetään laitteen sijainti */}
-      <p>Viimeisin lämpötila: {measurements[measurements.length - 1]?.temperature} °C</p>
-      <p>Mitattu: {measurements[measurements.length - 1] ? new Date(measurements[measurements.length - 1].measured_at).toLocaleString('fi-FI') : ''}</p>
-      <p>Aiemmat mittaukset: <ul>{measurements.slice(0, -1).reverse().map((m, i) => (<li key={i}>{m.temperature} °C, {new Date(m.measured_at).toLocaleString('fi-FI')}</li>))}</ul></p>
-      <h2>Taustaa</h2>
-      <p>
+  // Muutetaan mittaukset Rechartsille sopivaan muotoon
+  const chartData = buildInterpolatedChartData(measurements);
 
-Henkilökohtainen IoT-projekti: ulkolämpötilan mittaus ESP32:lla, data pilveen, React-dashboard sääennustevertailulla (WIP)
+  const { minTemp, maxTemp, avgTemp } = calculateStats(chartData);
+  const latest = measurements[measurements.length - 1]; // Viimeisin mittaus (järjestetty vanhimmasta uusimpaan)
 
-<a href="https://github.com/tupepi/iot-temp-pipeline" target="_blank" rel="noopener noreferrer">GitHub</a>
-</p>
+  return (
+    <div className="min-h-screen dark:text-gray-400 dark:bg-gray-900 p-2">
+      <div className="mb-4">
+        <h1 className="text-2xl font-bold dark:text-gray-100">IoT Temp Pipeline</h1>
+        <p className="text-sm dark:text-gray-400">{device?.location}</p>
+      </div>
+      <motion.div
+        initial={{ opacity: 0, x: -20 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.4 }}
+        className="mb-4 bg-white dark:bg-gray-800 rounded-lg shadow p-6"
+      >
+        {latest && (
+          <div className="flex items-baseline gap-3 mt-2">
+            <span className="text-5xl font-bold dark:text-gray-100">
+              {parseFloat(latest.temperature).toFixed(1)} °C
+            </span>
+            <span className="text-sm dark:text-gray-400">
+              {new Date(latest.measured_at).toLocaleString('fi-FI')}
+            </span>
+          </div>
+        )}
+      </motion.div>
+
+      <motion.div
+        className="mb-4 bg-white dark:bg-gray-800 rounded-lg shadow p-6"
+        initial={{ opacity: 0, x: -20 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.4 }}
+      >
+        {/* Viivakuvaaja — ResponsiveContainer venyttää kuvaajan vanhemman elementin leveyteen */}
+        <h2 className="text-lg font-semibold dark:text-gray-400 mb-2">Lämpötila — viimeiset 24h</h2>
+        <ResponsiveContainer width="100%" height={300}>
+          <LineChart data={chartData}>
+            <CartesianGrid strokeDasharray="3 3" /> {/* Ruudukkoviivat taustalle */}
+            <XAxis dataKey="time" ticks={buildXAxisTicks(chartData)} />
+            <YAxis domain={['auto', 'auto']} unit="°C" width={55} />
+            <Tooltip formatter={(value) => [`${value ?? '-'} °C`, 'Lämpötila']} />{' '}
+            {/* Tooltip hiiren päälle */}
+            <Line
+              type="monotone"
+              dataKey="temp"
+              dot={false}
+              isAnimationActive={true}
+              animationBegin={0}
+              animationDuration={1500}
+              animationEasing="ease-out"
+            />{' '}
+            {/* Viiva ilman pisteitä (dot=false), siisteämpi ulkonäkö 233 datapisteellä */}
+          </LineChart>
+        </ResponsiveContainer>
+        <p className="dark:text-gray-400">
+          Min: {minTemp} °C &nbsp;|&nbsp; Max: {maxTemp} °C &nbsp;|&nbsp; Keskiarvo: {avgTemp} °C
+        </p>
+      </motion.div>
+
+      <motion.div
+        initial={{ opacity: 0, x: -20 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.4 }}
+        className="bg-white dark:bg-gray-800 rounded-lg shadow p-6"
+      >
+        <h2 className="text-lg font-semibold dark:text-gray-100 mb-2">Taustaa</h2>
+        <p>
+          Hen&shy;ki&shy;lö&shy;koh&shy;tai&shy;nen IoT-pro&shy;jek&shy;ti:
+          ul&shy;ko&shy;läm&shy;pö&shy;ti&shy;lan mit&shy;taus ESP32:lla, da&shy;ta pil&shy;veen,
+          React-dash&shy;board sää&shy;en&shy;nus&shy;te&shy;ver&shy;tai&shy;lul&shy;la (WIP)
+        </p>
+        <a
+          className="text-blue-400 hover:underline"
+          href="https://github.com/tupepi/iot-temp-pipeline"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          GitHub
+        </a>
+      </motion.div>
     </div>
   );
 }
 
-export default App;                                  // Viedään komponentti main.tsx:n käytettäväksi
+export default App;
