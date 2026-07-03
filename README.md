@@ -9,6 +9,7 @@ Projektin tavoite ei ole vain saada laite toimimaan, vaan opetella ja dokumentoi
 Tämä on aktiivisesti kehitteillä oleva harrasteprojekti. Osat valmistuvat vaiheittain, ks. alla.
 
 ## Arkkitehtuuri
+
 ESP32 (anturi) → Backend (Node.js/Express) → Tietokanta (Neon/PostgreSQL)
 
 ↑
@@ -20,27 +21,28 @@ Laite ei koskaan kommunikoi suoraan tietokannan kanssa — kaikki kulkee oman ba
 ESP32 myös tarjoaa oman pienen HTTP-rajapinnan kotiverkon sisällä (`/temp`, `/api`), erillään pilviyhteydestä — tämä mahdollistaa laitteen tilan tarkistamisen suoraan paikallisverkossa ilman pilven kautta kiertämistä.
 
 ## Projektin rakenne
+
 iot-temp-pipeline/
 
 ├── firmware/
 
-│   └── wemos-mittari/      # ESP32-koodi (Arduino/C++)
+│ └── wemos-mittari/ # ESP32-koodi (Arduino/C++)
 
-├── backend/                 # Node.js + Express API
+├── backend/ # Node.js + Express API
 
-├── frontend/                # React-dashboard (tulossa)
+├── frontend/ # React-dashboard
 
 └── README.md
 
 ## Tekninen pino
 
 - **Laitteisto:** Wemos D1 R32 (ESP32) + DS18B20-lämpötila-anturi
-- **Firmware:** Arduino/C++, langaton OTA-päivitys, HTTPS-yhteys pilveen (Let's Encrypt Root CA)
+- **Firmware:** Arduino/C++, langaton OTA-päivitys, HTTPS-yhteys pilveen (Google Trust Services WE1)
 - **Backend:** Node.js + Express, API-avain-suojaus kirjoitusreiteille
 - **Tietokanta:** Neon (serverless PostgreSQL)
 - **Hosting:** Render (backend)
-- **Frontend:** React + Vite + TypeScript (GitHub Pages)
-- **CI/CD:** GitHub Actions (frontendin automaattinen build + deploy) 
+- **Frontend:** React + Vite + TypeScript + Tailwind CSS + Framer Motion (GitHub Pages)
+- **CI/CD:** GitHub Actions (frontendin automaattinen build + deploy)
 - **Sääntövertailu:** MET Norway / Yr.no API (suunnitteilla)
 
 ## Edistyminen
@@ -58,12 +60,13 @@ iot-temp-pipeline/
 - [x] React-dashboard: nykytilanteen näyttö
 - [x] Frontend julkaistu GitHub Pagesiin (CI/CD: GitHub Actions)
 - [x] Idempotenssi-suoja tietokantaan (estää duplikaattimittaukset)
-- [ ] React-dashboard: historiakuvaaja
+- [x] React-dashboard: historiakuvaaja
 - [ ] Sääennusteen vertailu (Yr.no)
 
 ## Asennus (firmware)
 
 Tarvittavat kirjastot (asenna Arduino IDE:n Library Managerilla):
+
 - OneWire
 - DallasTemperature
 
@@ -85,9 +88,10 @@ Tarvitsee `.env`-tiedoston (ks. `.env.example`) Neon-yhteysmerkkijonolle ja API-
 
 Tämä projekti on syntynyt halusta yhdistää harrastelaitteisto oikeaan, ammattimaisten käytänteiden mukaiseen pilviarkkitehtuuriin — ei vain "saada se toimimaan", vaan ymmärtää ja perustella jokainen rakenteellinen päätös matkan varrella.
 
-Projektin yhtenä tavoitteena oli harjoitella, miten tekoälyä kannattaa hyödyntää suunnittelussa ja toteutuksessa — ei vain nopeuttaa tekemistä, vaan oppia tarkoituksenmukaista käyttöä. Claude toimi keskustelukumppanina arkkitehtuurivalinnoissa, virheenselvityksessä ja koodin laadun parantamisessa; päätökset ja toteutus ovat omia. 
+Projektin yhtenä tavoitteena oli harjoitella, miten tekoälyä kannattaa hyödyntää suunnittelussa ja toteutuksessa — ei vain nopeuttaa tekemistä, vaan oppia tarkoituksenmukaista käyttöä. Claude toimi keskustelukumppanina arkkitehtuurivalinnoissa, virheenselvityksessä ja koodin laadun parantamisessa; päätökset ja toteutus ovat omia.
 
 Iso osa oppimisesta tapahtui debugatessa — muutama esimerkki seuraavassa.
+
 ## Kohdatut haasteet
 
 Muutama esimerkki ongelmista, joita matkan varrella ratkaistiin — pidetty mukana, koska ongelmanratkaisu on ollut yhtä iso osa oppimista kuin lopputulos.
