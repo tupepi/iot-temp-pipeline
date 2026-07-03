@@ -4,7 +4,7 @@ on:
     branches:
       - main
     paths:
-      - 'frontend/**'   # Ajetaan vain jos frontend-kansio muuttuu
+      - "frontend/**" # Ajetaan vain jos frontend-kansio muuttuu
   workflow_dispatch:
 
 jobs:
@@ -15,7 +15,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
       - name: Install dependencies
         run: npm ci
         working-directory: frontend
