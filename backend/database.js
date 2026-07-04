@@ -5,6 +5,9 @@ const { Pool } = require("pg"); // Tuodaan Pool-luokka pg-kirjastosta (Pool = yh
 // Luodaan yhteyspooli, joka hoitaa yhteydet tietokantaan tehokkaasti
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL, // Luetaan yhteysmerkkijono ympäristömuuttujasta (EI koodiin kovakoodattuna)
+  ssl: {
+    rejectUnauthorized: true, // Varmistetaan palvelimen varmenne (verify-full -käytös)
+  },
 });
 
 const cache = {
@@ -47,7 +50,7 @@ async function getRecentMeasurements(deviceId, hours = 24) {
      ORDER BY measured_at ASC`, // INTERVAL-laskenta tehdään suoraan PostgreSQL:ssä
     [deviceId, hours], // Parametrit kyselyyn
   );
-  cache.data = result.rows;
+  rcache.data = result.rows;
   cache.timestamp = now;
   return cache.data; // Palautetaan kaikki löytyneet rivit listana
 }

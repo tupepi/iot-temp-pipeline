@@ -15,7 +15,7 @@ import {
   buildXAxisTicks,
 } from './utils/chartUtils';
 import { fetchDevice, fetchMeasurements } from './api/backendApi';
-import Card from './components/Card';
+import { motion } from 'framer-motion';
 
 interface Device {
   device_id: string;
@@ -66,12 +66,17 @@ function App() {
   const latest = measurements[measurements.length - 1]; // Viimeisin mittaus (järjestetty vanhimmasta uusimpaan)
 
   return (
-    <div className="min-h-screen dark:text-gray-400 dark:bg-gray-900 bg-gray-100 p-2">
+    <div className="min-h-screen dark:text-gray-400 dark:bg-gray-900 p-2">
       <div className="mb-4">
         <h1 className="text-2xl font-bold dark:text-gray-100">IoT Temp Pipeline</h1>
         <p className="text-sm dark:text-gray-400">{device?.location}</p>
       </div>
-      <Card delay={0}>
+      <motion.div
+        initial={{ opacity: 0, x: -20 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.4 }}
+        className="mb-4 bg-white dark:bg-gray-800 rounded-lg shadow p-6"
+      >
         {latest && (
           <div className="flex items-baseline gap-3 mt-2">
             <span className="text-5xl font-bold dark:text-gray-100">
@@ -82,9 +87,14 @@ function App() {
             </span>
           </div>
         )}
-      </Card>
+      </motion.div>
 
-      <Card delay={0.2}>
+      <motion.div
+        className="mb-4 bg-white dark:bg-gray-800 rounded-lg shadow p-6"
+        initial={{ opacity: 0, x: -20 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.4 }}
+      >
         {/* Viivakuvaaja — ResponsiveContainer venyttää kuvaajan vanhemman elementin leveyteen */}
         <h2 className="text-lg font-semibold dark:text-gray-400 mb-2">Lämpötila — viimeiset 24h</h2>
         <ResponsiveContainer width="100%" height={300}>
@@ -109,9 +119,14 @@ function App() {
         <p className="dark:text-gray-400">
           Min: {minTemp} °C &nbsp;|&nbsp; Max: {maxTemp} °C &nbsp;|&nbsp; Keskiarvo: {avgTemp} °C
         </p>
-      </Card>
+      </motion.div>
 
-      <Card delay={0.3}>
+      <motion.div
+        initial={{ opacity: 0, x: -20 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.4 }}
+        className="bg-white dark:bg-gray-800 rounded-lg shadow p-6"
+      >
         <h2 className="text-lg font-semibold dark:text-gray-100 mb-2">Taustaa</h2>
         <p>
           Hen&shy;ki&shy;lö&shy;koh&shy;tai&shy;nen IoT-pro&shy;jek&shy;ti:
@@ -126,7 +141,7 @@ function App() {
         >
           GitHub
         </a>
-      </Card>
+      </motion.div>
     </div>
   );
 }
