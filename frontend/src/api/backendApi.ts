@@ -1,4 +1,4 @@
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? 'https://iot-temp-pipeline.onrender.com';
 
 export async function fetchDevice(deviceId: string) {
   const response = await fetch(`${BACKEND_URL}/devices/${deviceId}`);
