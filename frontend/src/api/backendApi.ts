@@ -1,4 +1,4 @@
-const BACKEND_URL = 'https://iot-temp-pipeline.onrender.com'; // Yksi paikka URL:lle
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
 export async function fetchDevice(deviceId: string) {
   const response = await fetch(`${BACKEND_URL}/devices/${deviceId}`);
@@ -11,4 +11,11 @@ export async function fetchMeasurements(deviceId: string, hours: number = 24) {
   if (!response.ok) throw new Error(`Palvelin vastasi: ${response.status}`);
   const data = await response.json();
   return data.measurements;
+}
+
+export async function fetchWeather(hours: number = 12) {
+  const response = await fetch(`${BACKEND_URL}/weather?hours=${hours}`);
+  if (!response.ok) throw new Error(`Palvelin vastasi: ${response.status}`);
+  const data = await response.json();
+  return data.forecasts;
 }

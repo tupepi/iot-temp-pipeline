@@ -2,33 +2,48 @@
 export interface Measurement {
   id: number;
   device_id: string;
-  temperature: string;   // Neon palauttaa NUMERIC-tyypin merkkijonona
+  temperature: string; // Neon palauttaa NUMERIC-tyypin merkkijonona
   status: string;
   measured_at: string;
 }
 
 // Rechartsille sopiva datapiste
 export interface ChartPoint {
-  time: string;          // Näytetään X-akselilla (esim. "14:30")
-  temp: number;          // Y-akselin arvo
-  timestamp: number;     // Unix-aika ms, käytetään laskennassa ja X-akselin tickseissä
+  time: string; // Näytetään X-akselilla (esim. "14:30")
+  temp: number; // Y-akselin arvo
+  timestamp: number; // Unix-aika ms, käytetään laskennassa ja X-akselin tickseissä
+}
+
+export interface WeatherForecast {
+  forecast_time: string;
+  temperature: string;
+  symbol_code: string | null;
+}
+
+export interface CombinedPoint {
+  time: string;
+  timestamp: number;
+  measured?: number;
+  forecast?: number;
 }
 
 // Lineaarinen interpolointi: laskee lämpötilan halutulla ajanhetkellä kahden tunnetun pisteen välillä
 function interpolateTemperature(
-  t1: number, y1: number,   // Aiempi mittaus: aika (ms) ja lämpötila
-  t2: number, y2: number,   // Myöhempi mittaus: aika (ms) ja lämpötila
-  t: number                 // Haluttu ajankohta (ms)
+  t1: number,
+  y1: number, // Aiempi mittaus: aika (ms) ja lämpötila
+  t2: number,
+  y2: number, // Myöhempi mittaus: aika (ms) ja lämpötila
+  t: number // Haluttu ajankohta (ms)
 ): number {
-  return y1 + (y2 - y1) * (t - t1) / (t2 - t1); // Lineaarinen interpolointikaava
+  return y1 + ((y2 - y1) * (t - t1)) / (t2 - t1); // Lineaarinen interpolointikaava
 }
 
 // Laskee interpoloidut pisteet tasaminuuteille (0, 10, 20, 30, 40, 50) mittausdatasta
 export function buildInterpolatedChartData(measurements: Measurement[]): ChartPoint[] {
-  if (measurements.length < 2) return [];          // Interpolointi vaatii vähintään kaksi pistettä
+  if (measurements.length < 2) return []; // Interpolointi vaatii vähintään kaksi pistettä
 
   const points = measurements
-    .filter((m) => m.status === 'OK')              // Jätetään virheelliset mittaukset pois
+    .filter((m) => m.status === 'OK') // Jätetään virheelliset mittaukset pois
     .map((m) => ({
       timestamp: new Date(m.measured_at).getTime(), // ISO-aika → millisekunteja
       temp: parseFloat(m.temperature),
@@ -40,8 +55,8 @@ export function buildInterpolatedChartData(measurements: Measurement[]): ChartPo
 
   // Pyöristetään ensimmäinen ajankohta seuraavaan tasaminuuttiin ylöspäin
   const start = new Date(points[0].timestamp);
-  start.setSeconds(0, 0);                          // Nollataan sekunnit ja millisekunnit
-  const remainder = start.getMinutes() % 10;       // Kuinka monta minuuttia yli tasaminuutin
+  start.setSeconds(0, 0); // Nollataan sekunnit ja millisekunnit
+  const remainder = start.getMinutes() % 10; // Kuinka monta minuuttia yli tasaminuutin
   if (remainder !== 0) {
     start.setMinutes(start.getMinutes() + (10 - remainder)); // Siirretään seuraavaan tasaminuuttiin
   }
@@ -60,8 +75,10 @@ export function buildInterpolatedChartData(measurements: Measurement[]): ChartPo
       const after = points[afterIndex];
 
       const interpolated = interpolateTemperature(
-        before.timestamp, before.temp,
-        after.timestamp, after.temp,
+        before.timestamp,
+        before.temp,
+        after.timestamp,
+        after.temp,
         t
       );
 
@@ -95,8 +112,41 @@ export function calculateStats(chartData: ChartPoint[]): {
 }
 
 // Laskee X-akselin ticks: joka 6. piste = tunnin välein
-export function buildXAxisTicks(chartData: ChartPoint[]): string[] {
-  return chartData
-    .filter((_, i) => i % 6 === 0)                // Joka kuudes piste (6 * 10min = 60min)
-    .map((p) => p.time);
+export function buildXAxisTicks(data: { time: string; timestamp: number }[]): number[] {
+  return data
+    .filter((p) => new Date(p.timestamp).getMinutes() === 0) // Vain tasatunnit
+    .map((p) => p.timestamp); // Palautetaan numero, ei teksti
+}
+
+export function buildCombinedChartData(
+  chartData: ChartPoint[],
+  forecasts: WeatherForecast[]
+): CombinedPoint[] {
+  const now = Date.now();
+
+  const measuredPoints: CombinedPoint[] = chartData
+    .filter((p) => p.timestamp <= now)
+    .map((p) => ({
+      time: p.time,
+      timestamp: p.timestamp,
+      measured: p.temp,
+      forecast: undefined,
+    }));
+
+  const forecastPoints: CombinedPoint[] = forecasts
+    //.filter((f) => new Date(f.forecast_time).getTime() > now)
+    .map((f) => {
+      const timestamp = new Date(f.forecast_time).getTime();
+      return {
+        time: new Date(f.forecast_time).toLocaleTimeString('fi-FI', {
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+        timestamp,
+        measured: undefined,
+        forecast: parseFloat(f.temperature),
+      };
+    });
+
+  return [...measuredPoints, ...forecastPoints].sort((a, b) => a.timestamp - b.timestamp);
 }
