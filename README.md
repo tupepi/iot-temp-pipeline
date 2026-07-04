@@ -1,12 +1,12 @@
 # IoT Temp Pipeline
 
-Henkilökohtainen IoT-harrasteprojekti: ulkolämpötilan mittaus kerrostalon parvekkeelta ESP32:lla, datan tallennus pilveen, ja tulevaisuudessa React-dashboard, joka vertailee mittausta sääennusteeseen.
+Henkilökohtainen IoT-harrasteprojekti: ulkolämpötilan mittaus kerrostalon parvekkeelta ESP32:lla, datan tallennus pilveen, ja React-dashboard, joka vertailee mittausta sääennusteeseen.
 
 Projektin tavoite ei ole vain saada laite toimimaan, vaan opetella ja dokumentoida ammattimaisia käytänteitä koko ketjun varrella — laitteisto, backend, tietokanta ja frontend.
 
-## Tila: rakenteilla 🚧
+## Tila: kehitys jatkuu
 
-Tämä on aktiivisesti kehitteillä oleva harrasteprojekti. Osat valmistuvat vaiheittain, ks. alla.
+Tämä on aktiivisesti kehitteillä oleva harrasteprojekti. Suunnitellut ominaisuudet on toteutettu, kehitys jatkuu.
 
 ## Arkkitehtuuri
 
@@ -40,10 +40,10 @@ iot-temp-pipeline/
 - **Firmware:** Arduino/C++, langaton OTA-päivitys, HTTPS-yhteys pilveen (Google Trust Services WE1)
 - **Backend:** Node.js + Express, API-avain-suojaus kirjoitusreiteille
 - **Tietokanta:** Neon (serverless PostgreSQL)
-- **Hosting:** Render (backend)
+- **Hosting:** Render (backend + cron job)
 - **Frontend:** React + Vite + TypeScript + Tailwind CSS + Framer Motion (GitHub Pages)
 - **CI/CD:** GitHub Actions (frontendin automaattinen build + deploy)
-- **Sääntövertailu:** MET Norway / Yr.no API (suunnitteilla)
+- **Säädata:** MET Norway / Yr.no API (Locationforecast 2.0), Render Cron Job
 
 ## Edistyminen
 
@@ -61,7 +61,7 @@ iot-temp-pipeline/
 - [x] Frontend julkaistu GitHub Pagesiin (CI/CD: GitHub Actions)
 - [x] Idempotenssi-suoja tietokantaan (estää duplikaattimittaukset)
 - [x] React-dashboard: historiakuvaaja
-- [ ] Sääennusteen vertailu (Yr.no)
+- [x] Sääennusteen vertailu (Yr.no)
 
 ## Asennus (firmware)
 
