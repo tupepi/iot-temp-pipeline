@@ -24,6 +24,11 @@ jobs:
         working-directory: frontend
         env:
           VITE_BACKEND_URL: ${{ secrets.VITE_BACKEND_URL }}
+      - name: Debug env
+        run: echo "BACKEND_URL is $VITE_BACKEND_URL"
+        working-directory: frontend
+        env:
+          VITE_BACKEND_URL: ${{ secrets.VITE_BACKEND_URL }}
       - name: Configure Git
         run: |
           git config --global user.name "github-actions[bot]"
