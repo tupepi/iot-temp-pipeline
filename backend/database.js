@@ -66,4 +66,21 @@ async function getDevice(deviceId) {
   return result.rows[0] || null; // Palautetaan ensimmäinen rivi, tai null jos ei löytynyt
 }
 
-module.exports = { saveMeasurement, getRecentMeasurements, getDevice }; // Viedään funktiot server.js:n käytettäväksi
+async function getWeatherForecasts(hours = 24) {
+  const result = await pool.query(
+    `SELECT forecast_time, temperature, symbol_code
+     FROM weather_forecasts
+     WHERE forecast_time >= NOW()                              -- Vain tulevat ennusteet
+       AND forecast_time <= NOW() + INTERVAL '1 hour' * $1    -- Annettu aikaväli
+     ORDER BY forecast_time ASC`,
+    [hours],
+  );
+  return result.rows;
+}
+
+module.exports = {
+  saveMeasurement,
+  getRecentMeasurements,
+  getDevice,
+  getWeatherForecasts,
+}; // Viedään funktiot server.js:n käytettäväksi
