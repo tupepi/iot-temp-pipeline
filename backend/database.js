@@ -47,7 +47,7 @@ async function getRecentMeasurements(deviceId, hours = 24) {
      ORDER BY measured_at ASC`, // INTERVAL-laskenta tehdään suoraan PostgreSQL:ssä
     [deviceId, hours], // Parametrit kyselyyn
   );
-  rcache.data = result.rows;
+  cache.data = result.rows;
   cache.timestamp = now;
   return cache.data; // Palautetaan kaikki löytyneet rivit listana
 }
