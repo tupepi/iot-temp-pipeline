@@ -22,6 +22,8 @@ jobs:
       - name: Build
         run: npm run build
         working-directory: frontend
+        env:
+          VITE_BACKEND_URL: ${{ secrets.VITE_BACKEND_URL }}
       - name: Configure Git
         run: |
           git config --global user.name "github-actions[bot]"
