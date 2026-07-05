@@ -1,6 +1,6 @@
 # IoT Temp Pipeline
 
-Henkilökohtainen IoT-harrasteprojekti: ulkolämpötilan mittaus kerrostalon parvekkeelta ESP32:lla, datan tallennus pilveen, ja React-dashboard, joka vertailee mittausta sääennusteeseen.
+Henkilökohtainen IoT-harrasteprojekti: kerrostalon parvekkeen lämpötilan mittaus ESP32:lla, datan tallennus pilveen, ja React-dashboard, joka vertailee mittausta sääennusteeseen.
 
 Projektin tavoite ei ole vain saada laite toimimaan, vaan opetella ja dokumentoida ammattimaisia käytänteitä koko ketjun varrella — laitteisto, backend, tietokanta ja frontend.
 
