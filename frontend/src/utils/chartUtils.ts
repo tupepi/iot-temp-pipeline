@@ -110,3 +110,16 @@ export function buildXAxisTicks(data: { time: string; timestamp: number }[]): nu
     .filter((p) => new Date(p.timestamp).getMinutes() === 0) // Vain tasatunnit
     .map((p) => p.timestamp); // Palautetaan numero, ei teksti
 }
+
+export function getTimeAgo(isoString: string): string {
+  const diff = Date.now() - new Date(isoString).getTime(); // Erotus millisekunteina
+  const minutes = Math.floor(diff / 60000); // Muutetaan minuuteiksi
+
+  if (minutes < 1) return 'juuri nyt';
+  if (minutes === 1) return '1 min sitten';
+  if (minutes < 60) return `${minutes} min sitten`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours === 1) return '1 h sitten';
+  return `${hours} h sitten`;
+}

@@ -13,6 +13,7 @@ import {
   type WeatherForecast,
   buildInterpolatedChartData,
   calculateStats,
+  getTimeAgo,
 } from './utils/chartUtils';
 import { fetchDevice, fetchMeasurements, fetchWeather } from './api/backendApi';
 import Card from './components/Card';
@@ -102,9 +103,7 @@ function App() {
             <span className="text-5xl font-bold dark:text-gray-100">
               {parseFloat(latest.temperature).toFixed(1)} °C
             </span>
-            <span className="text-sm dark:text-gray-400">
-              {new Date(latest.measured_at).toLocaleString('fi-FI')}
-            </span>
+            <span className="text-sm dark:text-gray-400">{getTimeAgo(latest.measured_at)}</span>
           </div>
         )}
       </Card>
@@ -214,7 +213,7 @@ function App() {
         <p>
           Hen&shy;ki&shy;lö&shy;koh&shy;tai&shy;nen IoT-pro&shy;jek&shy;ti: par&shy;vek&shy;keen
           läm&shy;pö&shy;ti&shy;lan mit&shy;taus ESP32:lla, da&shy;ta pil&shy;veen,
-          React-dash&shy;board sää&shy;en&shy;nus&shy;te&shy;ver&shy;tai&shy;lul&shy;la (WIP)
+          React-dash&shy;board sää&shy;en&shy;nus&shy;te&shy;ver&shy;tai&shy;lul&shy;la.
         </p>
         <a
           className="text-blue-400 hover:underline"
