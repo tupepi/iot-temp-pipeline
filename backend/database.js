@@ -66,14 +66,14 @@ async function getDevice(deviceId) {
   return result.rows[0] || null; // Palautetaan ensimmäinen rivi, tai null jos ei löytynyt
 }
 
-async function getWeatherForecasts(hours = 24) {
+async function getWeatherForecasts(pastHours = 24, futureHours = 12) {
   const result = await pool.query(
     `SELECT forecast_time, temperature, symbol_code
      FROM weather_forecasts
-     WHERE forecast_time >= NOW()                              -- Vain tulevat ennusteet
-       AND forecast_time <= NOW() + INTERVAL '1 hour' * $1    -- Annettu aikaväli
+     WHERE forecast_time >= NOW() - INTERVAL '1 hour' * $1   -- Vain tulevat ennusteet
+       AND forecast_time <= NOW() + INTERVAL '1 hour' * $2    -- Annettu aikaväli
      ORDER BY forecast_time ASC`,
-    [hours],
+    [pastHours, futureHours],
   );
   return result.rows;
 }

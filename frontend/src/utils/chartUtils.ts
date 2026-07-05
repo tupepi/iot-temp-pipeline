@@ -20,13 +20,6 @@ export interface WeatherForecast {
   symbol_code: string | null;
 }
 
-export interface CombinedPoint {
-  time: string;
-  timestamp: number;
-  measured?: number;
-  forecast?: number;
-}
-
 // Lineaarinen interpolointi: laskee lämpötilan halutulla ajanhetkellä kahden tunnetun pisteen välillä
 function interpolateTemperature(
   t1: number,
@@ -116,37 +109,4 @@ export function buildXAxisTicks(data: { time: string; timestamp: number }[]): nu
   return data
     .filter((p) => new Date(p.timestamp).getMinutes() === 0) // Vain tasatunnit
     .map((p) => p.timestamp); // Palautetaan numero, ei teksti
-}
-
-export function buildCombinedChartData(
-  chartData: ChartPoint[],
-  forecasts: WeatherForecast[]
-): CombinedPoint[] {
-  const now = Date.now();
-
-  const measuredPoints: CombinedPoint[] = chartData
-    .filter((p) => p.timestamp <= now)
-    .map((p) => ({
-      time: p.time,
-      timestamp: p.timestamp,
-      measured: p.temp,
-      forecast: undefined,
-    }));
-
-  const forecastPoints: CombinedPoint[] = forecasts
-    //.filter((f) => new Date(f.forecast_time).getTime() > now)
-    .map((f) => {
-      const timestamp = new Date(f.forecast_time).getTime();
-      return {
-        time: new Date(f.forecast_time).toLocaleTimeString('fi-FI', {
-          hour: '2-digit',
-          minute: '2-digit',
-        }),
-        timestamp,
-        measured: undefined,
-        forecast: parseFloat(f.temperature),
-      };
-    });
-
-  return [...measuredPoints, ...forecastPoints].sort((a, b) => a.timestamp - b.timestamp);
 }

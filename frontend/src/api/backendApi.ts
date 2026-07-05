@@ -13,8 +13,10 @@ export async function fetchMeasurements(deviceId: string, hours: number = 24) {
   return data.measurements;
 }
 
-export async function fetchWeather(hours: number = 12) {
-  const response = await fetch(`${BACKEND_URL}/weather?hours=${hours}`);
+export async function fetchWeather(pastHours: number = 24, futureHours: number = 12) {
+  const response = await fetch(
+    `${BACKEND_URL}/weather?pastHours=${pastHours}&futureHours=${futureHours}`
+  );
   if (!response.ok) throw new Error(`Palvelin vastasi: ${response.status}`);
   const data = await response.json();
   return data.forecasts;

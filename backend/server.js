@@ -101,9 +101,10 @@ app.get("/devices/:deviceId", async (req, res) => {
 app.get("/weather", async (req, res) => {
   // GET-reitti sääennusteelle
   try {
-    const hours = parseInt(req.query.hours) || 24; // Aikaväli query-parametrina, oletus 24h
-    const forecasts = await getWeatherForecasts(hours); // Haetaan ennusteet tietokannasta
-    res.json({ hours, count: forecasts.length, forecasts }); // Palautetaan data metatietojen kanssa
+    const pastHours = parseInt(req.query.pastHours) || 24;
+    const futureHours = parseInt(req.query.futureHours) || 12;
+    const forecasts = await getWeatherForecasts(pastHours, futureHours); // Haetaan ennusteet tietokannasta
+    res.json({ pastHours, futureHours, count: forecasts.length, forecasts }); // Palautetaan data metatietojen kanssa
   } catch (error) {
     console.error("Virhe sääennusteen haussa:", error);
     res.status(500).json({ error: "Sääennusteen hakeminen epäonnistui" });

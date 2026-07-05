@@ -13,8 +13,6 @@ import {
   type WeatherForecast,
   buildInterpolatedChartData,
   calculateStats,
-  buildXAxisTicks,
-  buildCombinedChartData,
 } from './utils/chartUtils';
 import { fetchDevice, fetchMeasurements, fetchWeather } from './api/backendApi';
 import Card from './components/Card';
@@ -33,13 +31,9 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [forecasts, setForecasts] = useState<WeatherForecast[]>([]);
   const [weatherLoading, setWeatherLoading] = useState(true);
-
-  useEffect(() => {
-    fetchWeather(12)
-      .then(setForecasts)
-      .catch((err) => setError(err.message))
-      .finally(() => setWeatherLoading(false));
-  }, []);
+  const [showMeasured, setShowMeasured] = useState(true); // Näytetäänkö mittausviiva
+  const [showForecast, setShowForecast] = useState(true); // Näytetäänkö ennusteviiva
+  const [hours, setHours] = useState(12); // Oletuksena 12h
 
   useEffect(() => {
     fetchDevice('wemos-mittari')
@@ -49,10 +43,15 @@ function App() {
   }, []);
 
   useEffect(() => {
-    fetchMeasurements('wemos-mittari')
+    fetchMeasurements('wemos-mittari', 48)
       .then(setMeasurements)
       .catch((err) => setError(err.message))
       .finally(() => setMeasurementsLoading(false));
+
+    fetchWeather(48, 12)
+      .then(setForecasts)
+      .catch((err) => setError(err.message))
+      .finally(() => setWeatherLoading(false));
   }, []);
 
   if (deviceLoading || measurementsLoading || weatherLoading) {
@@ -70,9 +69,24 @@ function App() {
     return <p>Virhe: {error}</p>;
   }
 
+  const cutoff = Date.now() - hours * 60 * 60 * 1000; // Aikaraja millisekunteina
+
+  const filteredMeasurements = measurements.filter(
+    (m) => new Date(m.measured_at).getTime() >= cutoff // Vain valitun ikkunan sisällä
+  );
+
+  const filteredForecasts = forecasts.filter((f) => new Date(f.forecast_time).getTime() >= cutoff);
+
   // Muutetaan mittaukset Rechartsille sopivaan muotoon
-  const chartData = buildInterpolatedChartData(measurements); // 1. Interpoloi raakadata
-  const combinedData = buildCombinedChartData(chartData, forecasts); // 2. Yhdistä ennusteeseen
+  const chartData = buildInterpolatedChartData(filteredMeasurements); // 1. Interpoloi raakadata
+  const forecastData = filteredForecasts.map((f) => ({
+    timestamp: new Date(f.forecast_time).getTime(),
+    time: new Date(f.forecast_time).toLocaleTimeString('fi-FI', {
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
+    temp: parseFloat(f.temperature),
+  }));
   const { minTemp, maxTemp, avgTemp } = calculateStats(chartData); // 3. Laske tilastot interpoloidusta (ei ennusteesta)
   const latest = measurements[measurements.length - 1]; // Viimeisin mittaus (järjestetty vanhimmasta uusimpaan)
 
@@ -97,9 +111,37 @@ function App() {
 
       <Card delay={0.2} className="px-2 py-6">
         {/* Viivakuvaaja — ResponsiveContainer venyttää kuvaajan vanhemman elementin leveyteen */}
-        <h2 className="text-lg font-semibold dark:text-gray-400 mb-2">Lämpötila — viimeiset 24h</h2>
+        <div className="flex gap-6 mb-2">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showMeasured}
+              onChange={(e) => setShowMeasured(e.target.checked)}
+            />
+            <span className="text-sm text-blue-400">Parvekkeen lämpötila</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showForecast}
+              onChange={(e) => setShowForecast(e.target.checked)}
+            />
+            <span className="text-sm text-red-400">Ulkolämpötila</span>
+          </label>
+          <select
+            value={hours}
+            onChange={(e) => setHours(parseInt(e.target.value))}
+            className="ml-auto text-sm bg-transparent dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded px-2 py-1 cursor-pointer"
+          >
+            {[6, 12, 24, 48].map((h) => (
+              <option key={h} value={h}>
+                {h}h
+              </option>
+            ))}
+          </select>
+        </div>
         <ResponsiveContainer width="100%" height={300}>
-          <LineChart data={combinedData}>
+          <LineChart>
             <CartesianGrid strokeDasharray="3 3" stroke="#4B5563" />{' '}
             {/* Ruudukkoviivat taustalle */}
             <XAxis
@@ -112,11 +154,18 @@ function App() {
                   minute: '2-digit',
                 })
               }
-              ticks={buildXAxisTicks(combinedData)}
               stroke="#9CA3AF"
               tick={{ fill: '#9CA3AF' }}
             />
-            <YAxis domain={['auto', 'auto']} unit="°C" width={40} />
+            <YAxis
+              domain={['auto', 'auto']}
+              unit="°C"
+              width={40}
+              tickFormatter={(value) => String(Math.round(value))}
+              allowDecimals={false}
+              stroke="#9CA3AF"
+              tick={{ fill: '#9CA3AF' }}
+            />
             <Tooltip
               formatter={(value) => [`${value ?? '-'} °C`, 'Lämpötila']}
               labelFormatter={(label) =>
@@ -124,29 +173,35 @@ function App() {
               }
             />{' '}
             {/* Tooltip hiiren päälle */}
-            <Line
-              type="monotone"
-              dataKey="measured"
-              stroke="#60A5FA"
-              dot={false}
-              name="Mittaus"
-              connectNulls={false}
-              isAnimationActive={true}
-              animationBegin={0}
-              animationDuration={1500}
-              animationEasing="ease-out"
-            />
-            <Line
-              type="monotone"
-              dataKey="forecast"
-              stroke="#F87171"
-              dot={false}
-              name="Ennuste"
-              connectNulls={false}
-              isAnimationActive={true}
-              animationDuration={1500}
-              animationEasing="ease-out"
-            />{' '}
+            {showMeasured && (
+              <Line
+                data={chartData}
+                type="monotone"
+                dataKey="temp"
+                stroke="#60A5FA"
+                dot={false}
+                name="Parvekkeen lämpötila"
+                connectNulls={false}
+                isAnimationActive={true}
+                animationBegin={0}
+                animationDuration={1500}
+                animationEasing="ease-out"
+              />
+            )}
+            {showForecast && (
+              <Line
+                data={forecastData}
+                type="monotone"
+                dataKey="temp"
+                stroke="#F87171"
+                dot={false}
+                name="Ulkolämpötila"
+                connectNulls={false}
+                isAnimationActive={true}
+                animationDuration={1500}
+                animationEasing="ease-out"
+              />
+            )}{' '}
           </LineChart>
         </ResponsiveContainer>
         <p className="dark:text-gray-400">
@@ -157,8 +212,8 @@ function App() {
       <Card delay={0.3}>
         <h2 className="text-lg font-semibold dark:text-gray-100 mb-2">Taustaa</h2>
         <p>
-          Hen&shy;ki&shy;lö&shy;koh&shy;tai&shy;nen IoT-pro&shy;jek&shy;ti:
-          ul&shy;ko&shy;läm&shy;pö&shy;ti&shy;lan mit&shy;taus ESP32:lla, da&shy;ta pil&shy;veen,
+          Hen&shy;ki&shy;lö&shy;koh&shy;tai&shy;nen IoT-pro&shy;jek&shy;ti: par&shy;vek&shy;keen
+          läm&shy;pö&shy;ti&shy;lan mit&shy;taus ESP32:lla, da&shy;ta pil&shy;veen,
           React-dash&shy;board sää&shy;en&shy;nus&shy;te&shy;ver&shy;tai&shy;lul&shy;la (WIP)
         </p>
         <a
