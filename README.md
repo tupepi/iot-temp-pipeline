@@ -23,12 +23,14 @@ Laite ei koskaan kommunikoi suoraan tietokannan kanssa — kaikki kulkee oman ba
 
 ## Projektin rakenne
 
+```
 iot-temp-pipeline/
 ├── firmware/
-│ └── wemos-mittari/ # ESP32-koodi (Arduino/C++)
-├── backend/ # Node.js + Express API
-├── frontend/ # React-dashboard
+│   └── wemos-mittari/      # ESP32-koodi (Arduino/C++)
+├── backend/                 # Node.js + Express API
+├── frontend/                # React-dashboard
 └── README.md
+```
 
 ## Mitä opin
 
