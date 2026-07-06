@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion';
+import { motion } from 'framer-motion'; // Tuodaan animaatiokirjasto
 
 interface CardProps {
   children: React.ReactNode; // Sisältö, joka annetaan kortin sisälle
@@ -6,7 +6,7 @@ interface CardProps {
   className?: string; // Valinnainen lisätyyli, jos joku kortti tarvitsee poikkeavan tyylin
 }
 
-function Card({ children, delay = 0, className = 'p-6' }: CardProps) {
+function Card({ children, delay = 0, className = 'p-6' }: CardProps) { // Uudelleenkäytettävä korttikomponentti sisääntuloanimaatiolla
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -19,4 +19,4 @@ function Card({ children, delay = 0, className = 'p-6' }: CardProps) {
   );
 }
 
-export default Card;
+export default Card; // Viedään komponentti muiden käytettäväksi

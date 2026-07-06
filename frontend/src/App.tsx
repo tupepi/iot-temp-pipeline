@@ -1,63 +1,55 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react'; // Tuodaan Reactin tila-hooki
 import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
+  LineChart, // Kuvaajan säiliökomponentti
+  Line, // Yksittäinen viiva kuvaajassa
+  XAxis, // X-akseli (aika)
+  YAxis, // Y-akseli (lämpötila)
+  CartesianGrid, // Taustan ruudukkoviivat
+  Tooltip, // Hiiren päälle tuleva tietolaatikko
+  ResponsiveContainer, // Venyttää kuvaajan vanhemman elementin kokoiseksi
 } from 'recharts'; // Tuodaan Recharts-komponentit
 import {
-  type Measurement,
-  type WeatherForecast,
-  buildInterpolatedChartData,
-  calculateStats,
-  getTimeAgo,
-} from './utils/chartUtils';
-import { fetchDevice, fetchMeasurements, fetchWeather } from './api/backendApi';
-import Card from './components/Card';
+  type Measurement, // Mittauksen tyyppi
+  type WeatherForecast, // Sääennusteen tyyppi
+  buildInterpolatedChartData, // Interpoloi raakadatan kymmenen minuutin tarkkuudelle
+  calculateStats, // Laskee min/max/keskiarvon
+  getTimeAgo, // Muotoilee "X min sitten" -tekstin
+} from './utils/chartUtils'; // Tuodaan kuvaajan apufunktiot ja tyypit
+import { fetchDevice, fetchMeasurements, fetchWeather } from './api/backendApi'; // Tuodaan backendin hakufunktiot
+import { useFetch } from './hooks/useFetch'; // Tuodaan yhteinen haku/lataus/virhe-hook
+import Card from './components/Card'; // Tuodaan yhteinen korttikomponentti
 
 interface Device {
-  device_id: string;
-  location: string;
-  created_at: string;
+  // Laitteen perustiedot backendista
+  device_id: string; // Laitteen tunniste
+  location: string; // Laitteen sijainti (esim. "Parveke")
+  created_at: string; // Laitteen rekisteröintiaika
 }
 
 function App() {
-  const [device, setDevice] = useState<Device | null>(null);
-  const [deviceLoading, setDeviceLoading] = useState(true);
-  const [measurements, setMeasurements] = useState<Measurement[]>([]);
-  const [measurementsLoading, setMeasurementsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [forecasts, setForecasts] = useState<WeatherForecast[]>([]);
-  const [weatherLoading, setWeatherLoading] = useState(true);
+  // Sovelluksen juurikomponentti
+  const { data: device, loading: deviceLoading } = useFetch<Device>(() => fetchDevice('wemos-mittari'), []); // Laitteen perustiedot — ei-kriittinen, puuttuminen ei estä näkymää
+  const {
+    data: measurementsData,
+    loading: measurementsLoading,
+    error: measurementsError,
+  } = useFetch<Measurement[]>(() => fetchMeasurements('wemos-mittari', 48), []); // Mittaushistoria — ydindata, jota ilman ei ole mitään näytettävää
+  const { data: forecastsData, loading: weatherLoading } = useFetch<WeatherForecast[]>(
+    () => fetchWeather(48, 12),
+    []
+  ); // Sääennusteet — ei-kriittinen, puuttuminen piilottaa vain ennusteviivan
+
+  const measurements = measurementsData ?? []; // Oletustyhjä taulukko latauksen tai virheen ajaksi
+  const forecasts = forecastsData ?? []; // Oletustyhjä taulukko latauksen tai virheen ajaksi
+
   const [showMeasured, setShowMeasured] = useState(true); // Näytetäänkö mittausviiva
   const [showForecast, setShowForecast] = useState(true); // Näytetäänkö ennusteviiva
-  const [hours, setHours] = useState(12); // Oletuksena 12h
-
-  useEffect(() => {
-    fetchDevice('wemos-mittari')
-      .then(setDevice)
-      .catch((err) => setError(err.message))
-      .finally(() => setDeviceLoading(false));
-  }, []);
-
-  useEffect(() => {
-    fetchMeasurements('wemos-mittari', 48)
-      .then(setMeasurements)
-      .catch((err) => setError(err.message))
-      .finally(() => setMeasurementsLoading(false));
-
-    fetchWeather(48, 12)
-      .then(setForecasts)
-      .catch((err) => setError(err.message))
-      .finally(() => setWeatherLoading(false));
-  }, []);
+  const [hours, setHours] = useState(12); // Näytettävän aikaikkunan pituus tunteina (valittavissa 6/12/24/48h pudotusvalikosta)
 
   if (deviceLoading || measurementsLoading || weatherLoading) {
-    // Odotetaan että MOLEMMAT ovat valmiita (korjattu: && → ||)
+    // Odotetaan että kaikki kolme hakua ovat valmiita
     return (
+      // Näytetään latausanimaatio kunnes data on valmis
       <div className="min-h-screen dark:bg-gray-900 flex flex-col items-center justify-center gap-3">
         <div className="w-8 h-8 border-4 border-gray-300 border-t-blue-400 rounded-full animate-spin" />
         <p className="text-sm dark:text-gray-400">Ladataan...</p>
@@ -66,32 +58,36 @@ function App() {
     );
   }
 
-  if (error) {
-    return <p>Virhe: {error}</p>;
+  if (measurementsError) {
+    // Vain ydindatan (mittausten) puuttuminen estää koko näkymän — laite- tai sääennustevirhe ei saa piilottaa mittauksia
+    return <p>Virhe: {measurementsError}</p>; // Näytetään virheviesti sivun sijaan
   }
 
   const cutoff = Date.now() - hours * 60 * 60 * 1000; // Aikaraja millisekunteina
 
   const filteredMeasurements = measurements.filter(
     (m) => new Date(m.measured_at).getTime() >= cutoff // Vain valitun ikkunan sisällä
-  );
+  ); // Rajataan mittaukset valitun aikaikkunan sisälle
 
-  const filteredForecasts = forecasts.filter((f) => new Date(f.forecast_time).getTime() >= cutoff);
+  const filteredForecasts = forecasts.filter((f) => new Date(f.forecast_time).getTime() >= cutoff); // Rajataan ennusteet samaan ikkunaan
 
   // Muutetaan mittaukset Rechartsille sopivaan muotoon
-  const chartData = buildInterpolatedChartData(filteredMeasurements); // 1. Interpoloi raakadata
+  const chartData = buildInterpolatedChartData(filteredMeasurements); // 1. Interpoloi raakadata kymmenen minuutin tarkkuudelle
   const forecastData = filteredForecasts.map((f) => ({
-    timestamp: new Date(f.forecast_time).getTime(),
+    // 2. Muunnetaan ennusteet kuvaajan muotoon
+    timestamp: new Date(f.forecast_time).getTime(), // Unix-aika millisekunteina
     time: new Date(f.forecast_time).toLocaleTimeString('fi-FI', {
+      // Kellonaika X-akselia varten
       hour: '2-digit',
       minute: '2-digit',
     }),
-    temp: parseFloat(f.temperature),
+    temp: parseFloat(f.temperature), // Lämpötila numerona
   }));
   const { minTemp, maxTemp, avgTemp } = calculateStats(chartData); // 3. Laske tilastot interpoloidusta (ei ennusteesta)
   const latest = measurements[measurements.length - 1]; // Viimeisin mittaus (järjestetty vanhimmasta uusimpaan)
 
   return (
+    // Varsinainen sivun sisältö
     <div className="min-h-screen dark:text-gray-400 dark:bg-gray-900 p-2">
       <div className="mb-4">
         <h1 className="text-2xl font-bold dark:text-gray-100">IoT Temp Pipeline</h1>
@@ -228,4 +224,4 @@ function App() {
   );
 }
 
-export default App;
+export default App; // Viedään komponentti main.tsx:n käytettäväksi
