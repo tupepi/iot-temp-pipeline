@@ -12,6 +12,13 @@ const pool = new Pool({
   }, // SSL-asetusten loppu
 }); // Poolin määrittely päättyy
 
+// Asetetaan jokaiselle poolista otetulle yhteydelle Suomen aikavyöhyke session-tasolla.
+// Näin esim. "2026-07-06"::date tulkitaan Suomen paikallisena keskiyönä (huomioiden DST),
+// eikä UTC-keskiyönä — muuten päivämääräväli alkaisi 2-3h liian myöhään historiahaussa.
+pool.on("connect", (client) => {
+  client.query("SET TIME ZONE 'Europe/Helsinki'");
+}); // pool.on-kutsun loppu
+
 const cache = new Map(); // Välimuisti mittausten hakua varten, avaimena "deviceId:hours"
 const CACHE_TTL = 5 * 60 * 1000; // Välimuistin voimassaoloaika millisekunteina (5 minuuttia)
 
