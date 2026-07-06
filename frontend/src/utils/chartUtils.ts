@@ -98,22 +98,28 @@ export function buildInterpolatedChartData(measurements: Measurement[]): ChartPo
   return result; // Palautetaan kaikki interpoloidut pisteet
 } // Funktion loppu
 
-// Laskee tilastot (min, max, keskiarvo) interpoloidusta datasta
-export function calculateStats(chartData: ChartPoint[]): {
-  // Laskee kuvaajan tilastot
-  minTemp: string; // Alin lämpötila muotoiltuna
-  maxTemp: string; // Ylin lämpötila muotoiltuna
-  avgTemp: string; // Keskilämpötila muotoiltuna
-} {
-  if (chartData.length === 0) return { minTemp: '-', maxTemp: '-', avgTemp: '-' }; // Ei dataa: näytetään viivat
+// Laskee X-akselin tickit vuorokauden vaihtumiskohtiin (keskiyöhön) pitkiä aikavälejä varten
+// Harventaa tickit automaattisesti niin että niitä on korkeintaan maxTicks kappaletta
+export function buildDayTicks(chartData: ChartPoint[], maxTicks: number = 8): number[] { // Ottaa kuvaajan datapisteet ja tickien enimmäismäärän
+  if (chartData.length === 0) return []; // Ei dataa: ei tickejä
 
-  const temps = chartData.map((p) => p.temp); // Poimitaan pelkät lämpötila-arvot
-  return {
-    // Palautetaan valmiiksi muotoillut tilastot
-    minTemp: Math.min(...temps).toFixed(1), // Alin arvo yhden desimaalin tarkkuudella
-    maxTemp: Math.max(...temps).toFixed(1), // Ylin arvo yhden desimaalin tarkkuudella
-    avgTemp: (temps.reduce((a, b) => a + b, 0) / temps.length).toFixed(1), // Keskiarvo yhden desimaalin tarkkuudella
-  };
+  const first = chartData[0].timestamp; // Aikavälin ensimmäinen ajanhetki
+  const last = chartData[chartData.length - 1].timestamp; // Aikavälin viimeinen ajanhetki
+
+  const dayStarts: number[] = []; // Kerätään kaikki vuorokauden alut väliltä tähän
+  const current = new Date(first); // Liikkuva päivämäärä-osoitin
+  current.setHours(0, 0, 0, 0); // Pyöristetään ensimmäisen pisteen vuorokauden alkuun
+  if (current.getTime() < first) current.setDate(current.getDate() + 1); // Siirrytään ensimmäiseen vaihdokseen datan sisällä
+
+  while (current.getTime() <= last) { // Käydään läpi jokainen vuorokauden vaihdos loppuun asti
+    dayStarts.push(current.getTime()); // Lisätään vaihdoshetki listaan
+    current.setDate(current.getDate() + 1); // Siirrytään seuraavaan vuorokauteen
+  } // While-silmukan loppu
+
+  if (dayStarts.length <= maxTicks) return dayStarts; // Ei tarvetta harventaa
+
+  const step = Math.ceil(dayStarts.length / maxTicks); // Joka monennesta vaihdoksesta pidetään tick
+  return dayStarts.filter((_, i) => i % step === 0); // Palautetaan harvennettu lista
 } // Funktion loppu
 
 export function getTimeAgo(isoString: string): string {

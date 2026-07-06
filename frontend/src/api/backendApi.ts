@@ -1,23 +1,41 @@
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? 'https://iot-temp-pipeline.onrender.com'; // Backendin osoite: ympäristömuuttuja tai tuotanto-oletus
 
-async function fetchJson(url: string) { // Yhteinen hakufunktio: tekee GET-pyynnön ja palauttaa JSON-vastauksen
+async function fetchJson(url: string) {
+  // Yhteinen hakufunktio: tekee GET-pyynnön ja palauttaa JSON-vastauksen
   const response = await fetch(url); // Tehdään GET-pyyntö annettuun osoitteeseen
   if (!response.ok) throw new Error(`Palvelin vastasi: ${response.status}`); // Heitetään virhe epäonnistuneesta pyynnöstä
   return response.json(); // Palautetaan vastaus JSON-oliona
 } // Funktion loppu
 
-export async function fetchDevice(deviceId: string) { // Hakee laitteen perustiedot
+export async function fetchDevice(deviceId: string) {
+  // Hakee laitteen perustiedot
   return fetchJson(`${BACKEND_URL}/devices/${deviceId}`); // Palautetaan laitteen tiedot sellaisenaan
 }
 
-export async function fetchMeasurements(deviceId: string, hours: number = 24) { // Hakee laitteen mittaukset annetulta aikaväliltä
+export async function fetchMeasurements(deviceId: string, hours: number = 24) {
+  // Hakee laitteen mittaukset annetulta aikaväliltä
   const data = await fetchJson(`${BACKEND_URL}/measurements/${deviceId}?hours=${hours}`); // Haetaan mittausvastaus
   return data.measurements; // Palautetaan pelkkä mittaustaulukko
 }
 
-export async function fetchWeather(pastHours: number = 24, futureHours: number = 12) { // Hakee sääennusteet annetulta aika-alueelta
+export async function fetchMeasurementsRange(deviceId: string, from: string, to: string) {
+  // Hakee laitteen mittaukset tarkalta päivämääräväliltä (YYYY-MM-DD)
+  const data = await fetchJson(
+    `${BACKEND_URL}/measurements/${deviceId}/range?from=${from}&to=${to}`
+  ); // Haetaan historiavastaus
+  return data.measurements; // Palautetaan pelkkä mittaustaulukko
+}
+
+export async function fetchWeather(pastHours: number = 24, futureHours: number = 12) {
+  // Hakee sääennusteet annetulta aika-alueelta
   const data = await fetchJson(
     `${BACKEND_URL}/weather?pastHours=${pastHours}&futureHours=${futureHours}` // Rakennetaan kysely aikaväliparametrein
   ); // Haetaan ennustevastaus
+  return data.forecasts; // Palautetaan pelkkä ennustetaulukko
+}
+
+export async function fetchWeatherRange(from: string, to: string) {
+  // Hakee sääennusteet tarkalta päivämääräväliltä (YYYY-MM-DD)
+  const data = await fetchJson(`${BACKEND_URL}/weather/range?from=${from}&to=${to}`); // Haetaan historiavastaus
   return data.forecasts; // Palautetaan pelkkä ennustetaulukko
 }
