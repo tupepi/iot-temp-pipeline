@@ -19,6 +19,8 @@ import { fetchDevice, fetchMeasurements, fetchWeather } from './api/backendApi';
 import { useFetch } from './hooks/useFetch'; // Tuodaan yhteinen haku/lataus/virhe-hook
 import Card from './components/Card'; // Tuodaan yhteinen korttikomponentti
 
+const REFETCH_INTERVAL_MS = 10 * 60 * 1000; // Taustapäivitysväli: 10 minuuttia, sama tahti kuin laitteen mittausten lähetyksellä
+
 interface Device {
   // Laitteen perustiedot backendista
   device_id: string; // Laitteen tunniste
@@ -33,11 +35,12 @@ function App() {
     data: measurementsData,
     loading: measurementsLoading,
     error: measurementsError,
-  } = useFetch<Measurement[]>(() => fetchMeasurements('wemos-mittari', 48), []); // Mittaushistoria — ydindata, jota ilman ei ole mitään näytettävää
+  } = useFetch<Measurement[]>(() => fetchMeasurements('wemos-mittari', 48), [], REFETCH_INTERVAL_MS); // Mittaushistoria — ydindata, jota ilman ei ole mitään näytettävää, päivittyy taustalla
   const { data: forecastsData, loading: weatherLoading } = useFetch<WeatherForecast[]>(
     () => fetchWeather(48, 12),
-    []
-  ); // Sääennusteet — ei-kriittinen, puuttuminen piilottaa vain ennusteviivan
+    [],
+    REFETCH_INTERVAL_MS
+  ); // Sääennusteet — ei-kriittinen, puuttuminen piilottaa vain ennusteviivan, päivittyy taustalla
 
   const measurements = measurementsData ?? []; // Oletustyhjä taulukko latauksen tai virheen ajaksi
   const forecasts = forecastsData ?? []; // Oletustyhjä taulukko latauksen tai virheen ajaksi
