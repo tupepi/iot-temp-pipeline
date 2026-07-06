@@ -11,7 +11,8 @@ import {
 import {
   type Measurement, // Mittauksen tyyppi
   type WeatherForecast, // Sääennusteen tyyppi
-  buildInterpolatedChartData, // Interpoloi raakadatan kymmenen minuutin tarkkuudelle
+  buildChartData, // Suodattaa ja muuntaa mittaukset kuvaajan pisteiksi
+  buildHourTicks, // Laskee X-akselin tickit tasatunneille lyhyitä aikavälejä varten
   buildDayTicks, // Laskee X-akselin tickit vuorokauden vaihtumiskohtiin pitkiä aikavälejä varten
   getTimeAgo, // Muotoilee "X min sitten" -tekstin
 } from './utils/chartUtils'; // Tuodaan kuvaajan apufunktiot ja tyypit
@@ -136,10 +137,8 @@ function App() {
   const filteredForecasts = forecasts.filter((f) => new Date(f.forecast_time).getTime() >= cutoff); // Rajataan ennusteet samaan ikkunaan
 
   // Muutetaan mittaukset Rechartsille sopivaan muotoon
-  // Aktiivinen historiaväli (jos haettu) ylikäy elävän hours-valinnan, kuten myös alla lasketut tilastot
-  const chartData = rangeData
-    ? buildInterpolatedChartData(rangeData) // 1a. Interpoloi haettu historiaväli sellaisenaan
-    : buildInterpolatedChartData(filteredMeasurements); // 1b. Interpoloi raakadata kymmenen minuutin tarkkuudelle
+  // Aktiivinen historiaväli (jos haettu) ylikäy elävän hours-valinnan
+  const chartData = buildChartData(rangeData ?? filteredMeasurements); // 1. Suodatetaan ja muunnetaan mittaukset kuvaajan muotoon
   const forecastData = (weatherRangeData ?? filteredForecasts).map((f) => ({
     // 2. Muunnetaan ennusteet kuvaajan muotoon — haettu historiaväli ylikäy elävät ennusteet, jos asetettu
     timestamp: new Date(f.forecast_time).getTime(), // Unix-aika millisekunteina
@@ -152,10 +151,20 @@ function App() {
   }));
   const latest = measurements[measurements.length - 1]; // Viimeisin mittaus (järjestetty vanhimmasta uusimpaan)
 
-  const spanMs = // Näytettävän kuvaajan aikavälin pituus millisekunteina
-    chartData.length > 1 ? chartData[chartData.length - 1].timestamp - chartData[0].timestamp : 0;
+  // Kuvaajan todellinen aikaväli kattaa sekä mittaus- että ennustedatan (ennuste ulottuu usein mittauksia pidemmälle
+  // tulevaisuuteen) — pelkkä mittausdatan väli jättäisi ennusteen ylittämän osan ilman X-akselin tickejä
+  const axisTimestamps = [...chartData, ...forecastData].map((p) => p.timestamp); // Kaikki näkyvät aikaleimat yhteen listaan
+  const axisFirst = axisTimestamps.length ? Math.min(...axisTimestamps) : 0; // Näkyvän kuvaajan ensimmäinen ajanhetki
+  const axisLast = axisTimestamps.length ? Math.max(...axisTimestamps) : 0; // Näkyvän kuvaajan viimeinen ajanhetki
+
+  const spanMs = axisLast - axisFirst; // Näytettävän kuvaajan aikavälin pituus millisekunteina
   const isLongRange = spanMs > 24 * 60 * 60 * 1000; // Yli vuorokauden mittainen väli: näytetään päivämäärätickit kellonajan sijaan
-  const dayTicks = isLongRange ? buildDayTicks(chartData) : undefined; // Lasketaan vuorokauden vaihtumiskohdat vain pitkille väleille
+  // Rechartsin scale="time" ei riitä: type="number" + horizontal-layout käsitellään aina kategorisena akselina,
+  // jolloin Recharts käyttää tick-arvoina suoraan jokaista datapistettä d3:n scale.ticks():n sijaan — siksi
+  // tickit on laskettava itse ja annettava eksplisiittisenä ticks-proppina, joka ohittaa tämän kategorisen polun
+  const axisTicks = isLongRange
+    ? buildDayTicks(axisFirst, axisLast) // Pitkillä väleillä vuorokauden vaihtumiskohdat
+    : buildHourTicks(axisFirst, axisLast); // Muuten tasatunnit
 
   return (
     // Varsinainen sivun sisältö
@@ -215,18 +224,21 @@ function App() {
               dataKey="timestamp"
               type="number"
               domain={['dataMin', 'dataMax']}
-              ticks={dayTicks} // Pitkillä väleillä vain vuorokauden vaihtumiskohdat, muuten Rechartsin automaattitickit
-              tickFormatter={(timestamp) =>
-                isLongRange
-                  ? new Date(timestamp).toLocaleDateString('fi-FI', {
-                      day: 'numeric',
-                      month: 'numeric',
-                    })
-                  : new Date(timestamp).toLocaleTimeString('fi-FI', {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })
-              }
+              ticks={axisTicks} // Pitkillä väleillä vuorokauden vaihtumiskohdat, muuten tasatunnit
+              tickFormatter={(timestamp) => {
+                if (!isLongRange) {
+                  return new Date(timestamp).toLocaleTimeString('fi-FI', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  }); // Lyhyellä välillä pelkkä kellonaika riittää
+                }
+                const date = new Date(timestamp); // Pitkän välin tick, joko vuorokauden vaihtumiskohta tai puoliväliin lisätty kello 12:00
+                const dateLabel = date.toLocaleDateString('fi-FI', { day: 'numeric', month: 'numeric' }); // Päivämäärä näytetään aina
+                const isMidnight = date.getHours() === 0 && date.getMinutes() === 0; // Tavalliset päivätickit osuvat aina keskiyöhön
+                if (isMidnight) return dateLabel; // Keskiyön tick: pelkkä päivämäärä riittää yksiselitteisesti
+                const timeLabel = date.toLocaleTimeString('fi-FI', { hour: '2-digit', minute: '2-digit' }); // Väliin lisätty kello 12:00 -tick tarvitsee myös kellonajan erottuakseen
+                return `${dateLabel} ${timeLabel}`;
+              }}
               stroke="#9CA3AF"
               tick={{ fill: '#9CA3AF' }}
             />

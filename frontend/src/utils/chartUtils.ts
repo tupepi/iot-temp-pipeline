@@ -23,88 +23,61 @@ export interface WeatherForecast {
   symbol_code: string | null; // Sääsymbolin koodi, tai null jos ei saatavilla
 }
 
-// Lineaarinen interpolointi: laskee lämpötilan halutulla ajanhetkellä kahden tunnetun pisteen välillä
-function interpolateTemperature( // Laskee lämpötilan kahden mittauspisteen välissä
-  t1: number, // Aiemman mittauksen ajanhetki (ms)
-  y1: number, // Aiempi mittaus: aika (ms) ja lämpötila
-  t2: number, // Myöhemmän mittauksen ajanhetki (ms)
-  y2: number, // Myöhempi mittaus: aika (ms) ja lämpötila
-  t: number // Haluttu ajankohta (ms)
-): number {
-  // Palauttaa interpoloidun lämpötilan
-  return y1 + ((y2 - y1) * (t - t1)) / (t2 - t1); // Lineaarinen interpolointikaava
+// Muuntaa mittaukset kuvaajan pisteiksi — ei interpolointia, X-akselin tickeistä huolehtivat
+// buildHourTicks (lyhyet välit) ja buildDayTicks (pitkät välit), joten aidot mittausajat riittävät sellaisenaan
+export function buildChartData(measurements: Measurement[]): ChartPoint[] {
+  // Suodattaa ja muuntaa mittaukset kuvaajan muotoon
+  return measurements
+    .filter((m) => m.status === 'OK') // Jätetään virheelliset mittaukset pois
+    .map((m) => {
+      const timestamp = new Date(m.measured_at).getTime(); // ISO-aika → millisekunteja
+      return {
+        timestamp, // Todellinen mittausaika, ei pyöristetty ruudukkoon
+        temp: parseFloat(m.temperature), // Lämpötila numerona
+        time: new Date(timestamp).toLocaleTimeString('fi-FI', { hour: '2-digit', minute: '2-digit' }), // Kellonaika X-akselia varten
+      };
+    }); // Palautetaan kaikki suodatetut pisteet
 } // Funktion loppu
 
-// Laskee interpoloidut pisteet tasaminuuteille (0, 10, 20, 30, 40, 50) mittausdatasta
-export function buildInterpolatedChartData(measurements: Measurement[]): ChartPoint[] {
-  // Interpoloi mittaukset kymmenen minuutin tarkkuudelle
-  if (measurements.length < 2) return []; // Interpolointi vaatii vähintään kaksi pistettä
+// Sallitut tick-välit tunteina lyhyille aikaväleille, pienimmästä suurimpaan
+const HOUR_TICK_STEPS = [1, 2, 3, 4, 6, 12];
 
-  const points = measurements // Muunnetaan mittaukset laskentaa varten kevyempään muotoon
-    .filter((m) => m.status === 'OK') // Jätetään virheelliset mittaukset pois
-    .map((m) => ({
-      timestamp: new Date(m.measured_at).getTime(), // ISO-aika → millisekunteja
-      temp: parseFloat(m.temperature), // Lämpötila numerona
-    }));
+// Laskee X-akselin tickit tasatunneille (esim. 08:00, 11:00, 14:00) lyhyitä aikavälejä varten
+// Recharts ei osaa itse pyöristää numeerisen akselin tickejä kellonaikoihin, joten se tehdään tässä käsin
+// Ottaa suoraan aikavälin rajat (ei kuvaajan datapisteitä), jotta sama tick-alue voidaan laskea sekä
+// mittaus- että ennustedatan yhdistetylle aikavälille — muuten tickit puuttuisivat ennusteen ylittämältä osalta
+export function buildHourTicks(first: number, last: number, maxTicks: number = 4): number[] {
+  // Ottaa aikavälin rajat ja tickien enimmäismäärän
+  if (!Number.isFinite(first) || !Number.isFinite(last) || first >= last) return []; // Ei kelvollista väliä: ei tickejä
 
-  if (points.length < 2) return []; // Suodatuksen jälkeen ei ehkä enää riitä pisteitä
+  const spanHours = (last - first) / (60 * 60 * 1000); // Aikavälin pituus tunteina
 
-  const result: ChartPoint[] = []; // Kerätään interpoloidut pisteet tähän
+  // Valitaan pienin tick-väli, jolla tickejä mahtuu korkeintaan maxTicks kappaletta
+  const stepHours =
+    HOUR_TICK_STEPS.find((h) => spanHours / h <= maxTicks) ?? HOUR_TICK_STEPS[HOUR_TICK_STEPS.length - 1];
 
-  // Pyöristetään ensimmäinen ajankohta seuraavaan tasaminuuttiin ylöspäin
-  const start = new Date(points[0].timestamp); // Ensimmäisen mittauksen ajanhetki
-  start.setSeconds(0, 0); // Nollataan sekunnit ja millisekunnit
-  const remainder = start.getMinutes() % 10; // Kuinka monta minuuttia yli tasaminuutin
-  if (remainder !== 0) {
-    // Jos ei jo valmiiksi tasakymmenellä
-    start.setMinutes(start.getMinutes() + (10 - remainder)); // Siirretään seuraavaan tasaminuuttiin
-  } // If-lohkon loppu
+  const current = new Date(first); // Liikkuva ajanhetki-osoitin
+  current.setMinutes(0, 0, 0); // Pyöristetään lähimpään tasatuntiin alaspäin
+  if (current.getTime() < first) current.setHours(current.getHours() + 1); // Varmistetaan että ensimmäinen tick on datan sisällä
+  while (current.getHours() % stepHours !== 0) current.setHours(current.getHours() + 1); // Siirrytään seuraavaan tick-välin monikertaan
 
-  const lastTime = new Date(points[points.length - 1].timestamp); // Viimeisimmän mittauksen ajanhetki
-
-  // Käydään läpi jokainen tasaminuutti ensimmäisestä viimeiseen
-  const current = new Date(start); // Liikkuva ajanhetki-osoitin silmukkaa varten
-  while (current <= lastTime) {
-    // Kunnes ollaan käyty koko aikaväli läpi
-    const t = current.getTime(); // Nykyisen tasaminuutin ajanhetki millisekunteina
-
-    const afterIndex = points.findIndex((p) => p.timestamp >= t); // Ensimmäinen mittaus joka on t:n jälkeen
-
-    if (afterIndex > 0) {
-      // Interpolointi onnistuu vain jos löytyy sekä ennen että jälkeen -piste
-      const before = points[afterIndex - 1]; // Lähin mittaus ennen ajanhetkeä t
-      const after = points[afterIndex]; // Lähin mittaus ajanhetken t jälkeen
-
-      const interpolated = interpolateTemperature(
-        // Lasketaan lämpötila ajanhetkelle t
-        before.timestamp,
-        before.temp,
-        after.timestamp,
-        after.temp,
-        t
-      );
-
-      result.push({
-        // Lisätään interpoloitu piste tulosjoukkoon
-        timestamp: t, // Tasaminuutin ajanhetki
-        temp: parseFloat(interpolated.toFixed(1)), // Pyöristetty lämpötila
-        time: current.toLocaleTimeString('fi-FI', { hour: '2-digit', minute: '2-digit' }), // Kellonaika X-akselia varten
-      });
-    } // If-lohkon loppu
-
-    current.setMinutes(current.getMinutes() + 10); // Siirrytään seuraavaan tasaminuuttiin
+  const ticks: number[] = []; // Kerätään tasatunnit tähän
+  while (current.getTime() <= last) {
+    // Käydään läpi jokainen tick-väli loppuun asti
+    ticks.push(current.getTime()); // Lisätään tasatunti listaan
+    current.setHours(current.getHours() + stepHours); // Siirrytään seuraavaan tickiin
   } // While-silmukan loppu
 
-  return result; // Palautetaan kaikki interpoloidut pisteet
+  return ticks; // Palautetaan lasketut tickit
 } // Funktion loppu
 
 // Laskee X-akselin tickit vuorokauden vaihtumiskohtiin (keskiyöhön) pitkiä aikavälejä varten
 // Harventaa tickit automaattisesti niin että niitä on korkeintaan maxTicks kappaletta
-export function buildDayTicks(chartData: ChartPoint[], maxTicks: number = 8): number[] { // Ottaa kuvaajan datapisteet ja tickien enimmäismäärän
-  if (chartData.length === 0) return []; // Ei dataa: ei tickejä
-
-  const first = chartData[0].timestamp; // Aikavälin ensimmäinen ajanhetki
-  const last = chartData[chartData.length - 1].timestamp; // Aikavälin viimeinen ajanhetki
+// Ottaa suoraan aikavälin rajat (ei kuvaajan datapisteitä), jotta sama tick-alue voidaan laskea sekä
+// mittaus- että ennustedatan yhdistetylle aikavälille — muuten tickit puuttuisivat ennusteen ylittämältä osalta
+export function buildDayTicks(first: number, last: number, maxTicks: number = 5): number[] {
+  // Ottaa aikavälin rajat ja tickien enimmäismäärän
+  if (!Number.isFinite(first) || !Number.isFinite(last) || first >= last) return []; // Ei kelvollista väliä: ei tickejä
 
   const dayStarts: number[] = []; // Kerätään kaikki vuorokauden alut väliltä tähän
   const current = new Date(first); // Liikkuva päivämäärä-osoitin
@@ -115,6 +88,13 @@ export function buildDayTicks(chartData: ChartPoint[], maxTicks: number = 8): nu
     dayStarts.push(current.getTime()); // Lisätään vaihdoshetki listaan
     current.setDate(current.getDate() + 1); // Siirrytään seuraavaan vuorokauteen
   } // While-silmukan loppu
+
+  if (dayStarts.length === 2) {
+    // Vain kaksi vuorokauden vaihtumiskohtaa: lisätään niiden puoliväliin kello 12:00 -tick, jotta tickejä on vähintään kolme
+    const noon = new Date(dayStarts[0]); // Ensimmäinen vuorokauden vaihtumiskohta
+    noon.setHours(12, 0, 0, 0); // Sama vuorokausi, kello 12:00 (paikallinen aika, kestää kesäajan vaihdoksen)
+    return [dayStarts[0], noon.getTime(), dayStarts[1]]; // Keskimmäinen tick väliin
+  } // If-lohkon loppu
 
   if (dayStarts.length <= maxTicks) return dayStarts; // Ei tarvetta harventaa
 
