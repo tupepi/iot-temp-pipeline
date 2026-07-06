@@ -28,6 +28,7 @@ import Card from './components/Card'; // Tuodaan yhteinen korttikomponentti
 
 const REFETCH_INTERVAL_MS = 10 * 60 * 1000; // Taustapäivitysväli: 10 minuuttia, sama tahti kuin laitteen mittausten lähetyksellä
 const TODAY = new Date().toISOString().slice(0, 10); // Kuluva päivä muodossa YYYY-MM-DD, historiavalitsimen yläraja
+const YESTERDAY = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10); // Eilinen päivä, historiavalitsimen oletusalaraja
 
 interface Device {
   // Laitteen perustiedot backendista
@@ -74,15 +75,16 @@ function App() {
 
   const [weatherRangeData, setWeatherRangeData] = useState<WeatherForecast[] | null>(null); // Haettu säädata — ylikäy hours-valinnan kun asetettu
 
-  async function handleFetchRange() {
-    // Haetaan tarkka päivämääräväli vasta "Hae"-painikkeesta
+  async function handleFetchRange(from: string = rangeFrom, to: string = rangeTo) {
+    // Haetaan tarkka päivämääräväli — joko "Hae"-painikkeesta tai automaattisesti "Väli"-vaihtoehdon valinnasta,
+    // jolloin from/to annetaan eksplisiittisesti koska state ei ehdi päivittyä ennen kutsua
     setRangeLoading(true); // Näytetään latausindikaattori haun ajaksi
     setRangeError(null); // Nollataan edellinen virhe
     try {
       const [measurements, weather] = await Promise.all([
         // Haetaan mittaukset ja säädata rinnakkain samalta väliltä
-        fetchMeasurementsRange('wemos-mittari', rangeFrom, rangeTo), // Valitun välin mittaukset
-        fetchWeatherRange(rangeFrom, rangeTo), // Valitun välin säädata
+        fetchMeasurementsRange('wemos-mittari', from, to), // Valitun välin mittaukset
+        fetchWeatherRange(from, to), // Valitun välin säädata
       ]); // Odotetaan että molemmat haut valmistuvat
       setRangeData(measurements); // Otetaan haettu väli käyttöön kuvaajassa
       setWeatherRangeData(weather); // Otetaan haettu säädata käyttöön vasta kun molemmat haut onnistuivat, ettei mittaus- ja sääviiva näytä eri aikaväliä
@@ -105,7 +107,10 @@ function App() {
     // Tuntivalikon raaka onChange-arvo ("6"/"12"/"24" tai "custom")
     if (value === 'custom') {
       // "Omavalintainen" valittu
-      setIsCustomRange(true); // Näytetään pvm-kentät, elävä näkymä säilyy kunnes "Hae" painetaan
+      setIsCustomRange(true); // Näytetään pvm-kentät
+      setRangeFrom(YESTERDAY); // Oletusalaraja: eilen
+      setRangeTo(TODAY); // Oletusyläraja: tänään
+      handleFetchRange(YESTERDAY, TODAY); // Haetaan oletusväli heti, ettei käyttäjän tarvitse painaa "Hae" tyhjällä näkymällä
     } else {
       handleHoursChange(parseInt(value)); // Numeerinen tuntivalinta: piilotetaan pvm-kentät ja palataan elävään näkymään
     }
@@ -151,9 +156,13 @@ function App() {
   }));
   const latest = measurements[measurements.length - 1]; // Viimeisin mittaus (järjestetty vanhimmasta uusimpaan)
 
-  // Kuvaajan todellinen aikaväli kattaa sekä mittaus- että ennustedatan (ennuste ulottuu usein mittauksia pidemmälle
-  // tulevaisuuteen) — pelkkä mittausdatan väli jättäisi ennusteen ylittämän osan ilman X-akselin tickejä
-  const axisTimestamps = [...chartData, ...forecastData].map((p) => p.timestamp); // Kaikki näkyvät aikaleimat yhteen listaan
+  // Kuvaajan todellinen aikaväli kattaa vain näkyvät viivat — jos jompikumpi on piilotettu valintaruudulla,
+  // sen data ei ole mukana XAxis:n domain={['dataMin','dataMax']}-laskennassa, joten ei tickeissäkään,
+  // muuten viimeinen tick voisi osua näkyvän datan ulkopuolelle (esim. ennuste ulottuu mittauksia pidemmälle)
+  const axisTimestamps = [
+    ...(showMeasured ? chartData : []),
+    ...(showForecast ? forecastData : []),
+  ].map((p) => p.timestamp); // Vain näkyvien viivojen aikaleimat yhteen listaan
   const axisFirst = axisTimestamps.length ? Math.min(...axisTimestamps) : 0; // Näkyvän kuvaajan ensimmäinen ajanhetki
   const axisLast = axisTimestamps.length ? Math.max(...axisTimestamps) : 0; // Näkyvän kuvaajan viimeinen ajanhetki
 
@@ -322,7 +331,7 @@ function App() {
             />
             <button
               type="button"
-              onClick={handleFetchRange}
+              onClick={() => handleFetchRange()}
               disabled={rangeLoading}
               className="border border-gray-300 dark:border-gray-600 rounded px-3 py-1 cursor-pointer disabled:cursor-default disabled:opacity-50"
             >
