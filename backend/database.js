@@ -27,79 +27,25 @@ const CACHE_TTL = 5 * 60 * 1000; // Välimuistin voimassaoloaika millisekunteina
 // vaikka tietokantayhteys olisi poikki (esim. ilmaistason tuntiraja täynnä)
 const latestMeasurementCache = new Map();
 
-// Kirjoittaa annetut mittaukset tietokantaan yhdellä monirivisellä INSERT-lauseella
-// Ottaa laitteen tunnisteen sekä listan mittauksia { temperature, status, measuredAt }
-async function writeMeasurementsToDb(deviceId, measurements) {
-  const values = []; // Tasainen parametrilista pool.query:lle
-  const rows = measurements
-    .map((m, i) => {
-      // Rakennetaan yksi ($1, $2, $3, $4)-ryhmä per mittaus
-      const base = i * 4; // Parametrien alkuindeksi tälle mittaukselle
-      values.push(deviceId, m.temperature, m.status, m.measuredAt); // Lisätään tämän mittauksen arvot listaan
-      return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4})`; // Yksi VALUES-rivi
-    })
-    .join(", "); // Yhdistetään kaikki rivit yhdeksi INSERT-lauseeksi
-
+// Tallentaa uuden mittauksen tietokantaan
+// Ottaa olion mittauksen tiedoilla
+async function saveMeasurement({ deviceId, temperature, status, measuredAt }) {
+  // Puretaan mittausolion kentät parametreiksi
+  latestMeasurementCache.set(deviceId, { device_id: deviceId, temperature, status, measured_at: measuredAt }); // Päivitetään varavälimuisti ennen tietokantakutsua, jotta se säilyy vaikka kutsu alla epäonnistuisi
   const result = await pool.query(
-    // Suoritetaan koko puskuri yhtenä SQL-kyselynä
-    `INSERT INTO measurements (device_id, temperature, status, measured_at) -- Lisätään uudet rivit measurements-tauluun
-     VALUES ${rows} -- Kaikki puskurin mittaukset samassa lauseessa
+    // Suoritetaan SQL-kysely ja odotetaan vastausta
+    `INSERT INTO measurements (device_id, temperature, status, measured_at) -- Lisätään uusi rivi measurements-tauluun
+     VALUES ($1, $2, $3, $4) -- Arvot annetaan parametreina
      ON CONFLICT (device_id, measured_at) DO NOTHING -- Ei virhettä jos rivi on jo olemassa
      RETURNING *`, // $1, $2, jne. ovat parametripaikkoja (estävät SQL-injektiota)
-    values, // Annetaan parametrien oikeat arvot tässä järjestyksessä
+    [deviceId, temperature, status, measuredAt], // Annetaan parametrien oikeat arvot tässä järjestyksessä
   ); // Kyselyn kutsu päättyy
   for (const key of cache.keys()) {
     // Käydään läpi kaikki välimuistiavaimet
     if (key.startsWith(`${deviceId}:`)) cache.delete(key); // Tyhjennetään vain tämän laitteen välimuisti
   } // Silmukan loppu
-  return result.rows; // Palautetaan lisätyt rivit (RETURNING * antaa ne takaisin)
+  return result.rows[0] || null; // Palautetaan lisätty rivi (RETURNING * antaa sen takaisin)
 } // Funktion loppu
-
-const BATCH_SIZE = 2; // Kuinka monta mittausta puskuroidaan muistiin ennen tietokantaan kirjoittamista
-const FLUSH_SAFETY_INTERVAL = 25 * 60 * 1000; // Varmuustyhjennys: jos puskuri ei täyty (esim. laite lakkaa lähettämästä), se kirjoitetaan silti tähän väliin mennessä
-
-const pendingBatches = new Map(); // deviceId -> vielä tietokantaan kirjoittamattomat mittaukset
-
-// Kirjoittaa laitteen odottavan puskurin tietokantaan ja tyhjentää sen
-async function flushPendingMeasurements(deviceId) {
-  const pending = pendingBatches.get(deviceId); // Haetaan laitteen odottava puskuri
-  if (!pending || pending.length === 0) return []; // Ei mitään kirjoitettavaa
-  pendingBatches.set(deviceId, []); // Tyhjennetään heti, ettei rinnakkainen kutsu kirjoita samoja rivejä kahdesti
-  return writeMeasurementsToDb(deviceId, pending); // Varsinainen tietokantakirjoitus
-} // Funktion loppu
-
-// Puskuroi yhden mittauksen muistiin ja kirjoittaa koko puskurin tietokantaan kun BATCH_SIZE täyttyy —
-// näin tietokantaa kuormitetaan harvemmin vaikka laite lähettäisi mittauksen jokaisella mittauskerralla
-// Ottaa laitteen tunnisteen sekä mittauksen { temperature, status, measuredAt }
-// Palauttaa tietokantaan kirjoitetut rivit, tai tyhjän listan jos mittaus jäi vielä puskuriin odottamaan
-async function bufferMeasurement(deviceId, measurement) {
-  latestMeasurementCache.set(deviceId, {
-    device_id: deviceId,
-    temperature: measurement.temperature,
-    status: measurement.status,
-    measured_at: measurement.measuredAt,
-  }); // Päivitetään varavälimuisti heti, jotta se säilyy vaikka tietokantakirjoitus lykkääntyisi tai epäonnistuisi
-
-  const pending = pendingBatches.get(deviceId) ?? []; // Haetaan laitteen nykyinen puskuri (tai aloitetaan uusi)
-  pending.push(measurement); // Lisätään uusi mittaus puskuriin
-  pendingBatches.set(deviceId, pending); // Tallennetaan päivitetty puskuri
-
-  if (pending.length >= BATCH_SIZE) {
-    // Puskuri täynnä, kirjoitetaan tietokantaan
-    return flushPendingMeasurements(deviceId); // Kirjoitetaan ja tyhjennetään puskuri
-  } // If-lohkon loppu
-
-  return []; // Mittaus jäi puskuriin odottamaan, ei vielä tietokannassa
-} // Funktion loppu
-
-setInterval(() => {
-  // Käydään kaikkien laitteiden puskurit läpi ja kirjoitetaan mahdolliset jäänteet, jotka eivät ole ehtineet täyttää BATCH_SIZEa
-  for (const deviceId of pendingBatches.keys()) {
-    flushPendingMeasurements(deviceId).catch((error) =>
-      console.error("Puskurin varmuustyhjennys epäonnistui:", error),
-    ); // Lokitetaan mahdollinen virhe, ei kaadeta prosessia
-  } // Silmukan loppu
-}, FLUSH_SAFETY_INTERVAL); // Ajetaan säännöllisesti taustalla
 
 // Hakee laitteen viimeisimmät mittaukset annetulta aikaväliltä
 // Ottaa laitteen tunnisteen ja tarkasteluvälin tunteina
@@ -231,7 +177,7 @@ async function closePool() {
 
 module.exports = {
   // Viedään moduulin funktiot
-  bufferMeasurement, // Puskuroi mittauksen ja kirjoittaa tietokantaan kun puskuri täyttyy
+  saveMeasurement, // Mittauksen tallennusfunktio
   getRecentMeasurements, // Mittausten hakufunktio
   getMeasurementsInRange, // Mittausten hakufunktio tarkalta päivämääräväliltä
   getEarliestMeasurementTime, // Vanhimman mittauksen ajanhetken hakufunktio

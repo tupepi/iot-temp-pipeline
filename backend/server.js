@@ -2,7 +2,7 @@ const express = require("express"); // Tuodaan Express-kirjasto
 const cors = require("cors"); // Tuodaan CORS-middleware (sallii pyynnöt eri origineista)
 const {
   // Tuodaan tarvittavat funktiot database.js:stä
-  bufferMeasurement, // Puskuroi mittauksen ja kirjoittaa tietokantaan kun puskuri täyttyy
+  saveMeasurement, // Mittauksen tallennusfunktio
   getRecentMeasurements, // Mittausten hakufunktio
   getMeasurementsInRange, // Mittausten hakufunktio tarkalta päivämääräväliltä
   getEarliestMeasurementTime, // Vanhimman mittauksen ajanhetken hakufunktio
@@ -70,8 +70,7 @@ app.get("/health", (req, res) => {
   res.json({ status: "ok" }); // Vastataan pienellä JSON-oliolla
 }); // Reitin määrittely päättyy
 
-// ESP32 lähettää tähän uuden mittauksen — SUOJATTU API-avaimella. Backend puskuroi
-// mittaukset muistiin ja kirjoittaa tietokantaan vasta erissä, jotta sitä kuormitetaan harvemmin
+// ESP32 lähettää tähän uuden mittauksen — SUOJATTU API-avaimella
 app.post(
   "/measurements",
   checkApiKey, // checkApiKey ajetaan ENNEN varsinaista käsittelijää
@@ -88,16 +87,24 @@ app.post(
         }); // JSON-vastauksen loppu
       } // If-lohkon loppu
 
-      const saved = await bufferMeasurement(deviceId, { temperature, status, measuredAt }); // Puskuroidaan mittaus, kirjoitetaan tietokantaan jos erä täyttyi
+      const saved = await saveMeasurement({
+        // Kutsutaan tallennusfunktiota
+        deviceId, // Laitteen tunniste
+        temperature, // Mitattu lämpötila
+        status, // Laitteen tilatieto
+        measuredAt, // Mittauksen ajanhetki
+      }); // Tallennetaan tietokantaan
 
-      if (saved.length === 0) {
-        // Mittaus jäi vielä puskuriin odottamaan, ei kirjoitettu tietokantaan tällä kertaa
+      if (!saved) {
+        // Jos null, tallennus ohitettiin koska duplikaatti
         return res // Aloitetaan vastauksen muodostaminen
-          .status(201) // Laitteelle tämä on silti onnistunut lähetys
-          .json({ message: "Mittaus puskuroitu, kirjoitetaan tietokantaan myöhemmin erässä" }); // Kerrotaan syy kutsujalle
+          .status(200) // Duplikaatti ei ole virhe, joten statuskoodi on 200
+          .json({
+            message: "Mittaus oli jo tallennettu (duplikaatti ohitettu)",
+          }); // Kerrotaan syy kutsujalle
       } // If-lohkon loppu
 
-      res.status(201).json({ message: `${saved.length} mittausta tallennettu`, data: saved }); // Onnistumisvastaus
+      res.status(201).json({ message: "Mittaus tallennettu", data: saved }); // Onnistumisvastaus
     },
     "Virhe mittauksen tallennuksessa:", // Lokiviesti virhetilanteessa
     "Mittauksen tallennus epäonnistui", // Vastausviesti kutsujalle virhetilanteessa
