@@ -18,10 +18,24 @@ export async function fetchMeasurements(deviceId: string, hours: number = 24) {
   return data.measurements; // Palautetaan pelkkä mittaustaulukko
 }
 
+export async function fetchMeasurementsRange(deviceId: string, from: string, to: string) {
+  // Hakee laitteen mittaukset tarkalta päivämääräväliltä (YYYY-MM-DD)
+  const data = await fetchJson(
+    `${BACKEND_URL}/measurements/${deviceId}/range?from=${from}&to=${to}`
+  ); // Haetaan historiavastaus
+  return data.measurements; // Palautetaan pelkkä mittaustaulukko
+}
+
 export async function fetchWeather(pastHours: number = 24, futureHours: number = 12) {
   // Hakee sääennusteet annetulta aika-alueelta
   const data = await fetchJson(
     `${BACKEND_URL}/weather?pastHours=${pastHours}&futureHours=${futureHours}` // Rakennetaan kysely aikaväliparametrein
   ); // Haetaan ennustevastaus
+  return data.forecasts; // Palautetaan pelkkä ennustetaulukko
+}
+
+export async function fetchWeatherRange(from: string, to: string) {
+  // Hakee sääennusteet tarkalta päivämääräväliltä (YYYY-MM-DD)
+  const data = await fetchJson(`${BACKEND_URL}/weather/range?from=${from}&to=${to}`); // Haetaan historiavastaus
   return data.forecasts; // Palautetaan pelkkä ennustetaulukko
 }

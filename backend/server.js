@@ -1,12 +1,15 @@
 const express = require("express"); // Tuodaan Express-kirjasto
 const cors = require("cors"); // Tuodaan CORS-middleware (sallii pyynnöt eri origineista)
 const {
-  // Tuodaan tarvittavat funktiot cache.js:stä (väliaikaisesti database.js:n sijaan, ks. README)
+  // Tuodaan tarvittavat funktiot database.js:stä
   saveMeasurement, // Mittauksen tallennusfunktio
   getRecentMeasurements, // Mittausten hakufunktio
-  saveWeatherForecastBatch, // Sääennusteiden erätallennusfunktio
+  getMeasurementsInRange, // Mittausten hakufunktio tarkalta päivämääräväliltä
+  getEarliestMeasurementTime, // Vanhimman mittauksen ajanhetken hakufunktio
+  getDevice, // Laitteen hakufunktio
   getWeatherForecasts, // Sääennusteiden hakufunktio
-} = require("./cache"); // Tuodaan välimuistifunktiot
+  getWeatherForecastsInRange, // Sääennusteiden hakufunktio tarkalta päivämääräväliltä
+} = require("./database"); // Tuodaan tietokantafunktiot
 
 const app = express(); // Luodaan Express-sovellusolio
 const PORT = process.env.PORT || 3000; // Render asettaa PORT-muuttujan automaattisesti
@@ -22,6 +25,14 @@ function parseHours(value, defaultValue) {
   const parsed = parseInt(value, 10); // Yritetään muuntaa parametri kokonaisluvuksi
   if (!Number.isFinite(parsed) || parsed <= 0) return defaultValue; // Puuttuva, NaN tai epäkelpo arvo -> oletus
   return Math.min(parsed, MAX_QUERY_HOURS); // Rajataan ylös suurimpaan sallittuun arvoon
+} // Funktion loppu
+
+const DATE_PARAM_PATTERN = /^\d{4}-\d{2}-\d{2}$/; // Sallittu muoto historiavalitsimen päivämäärille (YYYY-MM-DD)
+
+// Tarkistaa onko annettu query-parametri kelvollinen YYYY-MM-DD-päivämäärä
+function isValidDateParam(value) {
+  // Ottaa raakaparametrin
+  return typeof value === "string" && DATE_PARAM_PATTERN.test(value); // Hyväksytään vain tarkka muoto
 } // Funktion loppu
 
 // Kääre async-reiteille: hoitaa virheen lokituksen ja 500-vastauksen yhdessä paikassa
@@ -109,7 +120,7 @@ app.get(
       const { deviceId } = req.params; // Poimitaan laitteen tunniste osoitteesta
       const hours = parseHours(req.query.hours, 24); // Luetaan ja rajataan tuntimäärä query-parametrista, oletus 24
 
-      const measurements = await getRecentMeasurements(deviceId, hours); // Haetaan mittaukset välimuistista
+      const measurements = await getRecentMeasurements(deviceId, hours); // Haetaan mittaukset tietokannasta
       res.json({ deviceId, hours, count: measurements.length, measurements }); // Palautetaan data metatietojen kanssa
     },
     "Virhe mittausten hakemisessa:", // Lokiviesti virhetilanteessa
@@ -117,24 +128,57 @@ app.get(
   ),
 ); // Reitin määrittely päättyy
 
-// Dashboard hakee tästä laitteen perustiedot — EI suojattu. Kovakoodattu väliaikaisesti,
-// koska tietokantayhteys on pois käytöstä eikä laitteita ole tarpeeksi montaa DB:n perustelemiseksi tässä.
-const KNOWN_DEVICE = {
-  device_id: "wemos-mittari", // Ainoan laitteen tunniste
-  location: "Jyväskylä, parveke", // Laitteen sijainti
-};
+// Dashboard hakee tästä laitteen historiadatan tarkalta päivämääräväliltä — EI suojattu, erillään hours-pohjaisesta reitistä
+app.get(
+  "/measurements/:deviceId/range",
+  asyncHandler(
+    async (req, res) => {
+      // Varsinainen historiahaun logiikka
+      const { deviceId } = req.params; // Poimitaan laitteen tunniste osoitteesta
+      const { from, to } = req.query; // Historiavalitsimen päivämääräparametrit
 
-app.get("/devices/:deviceId", (req, res) => {
-  // Varsinainen laitetietojen hakulogiikka — synkroninen, ei voi heittää virhettä
-  const { deviceId } = req.params; // Poimitaan laitteen tunniste osoitteesta
+      if (!isValidDateParam(from) || !isValidDateParam(to)) {
+        // Molemmat vaaditaan muodossa YYYY-MM-DD
+        return res
+          .status(400)
+          .json({ error: "from ja to vaaditaan muodossa YYYY-MM-DD" }); // Virheviesti kutsujalle
+      } // If-lohkon loppu
 
-  if (deviceId !== KNOWN_DEVICE.device_id) {
-    // Jos kysytty tunniste ei täsmää
-    return res.status(404).json({ error: "Laitetta ei löytynyt" }); // Vastataan 404-statuksella
-  } // If-lohkon loppu
+      const measurements = await getMeasurementsInRange(deviceId, from, to); // Haetaan mittaukset annetulta väliltä
+      res.json({
+        deviceId,
+        from,
+        to,
+        count: measurements.length,
+        measurements,
+      }); // Palautetaan data metatietojen kanssa
+    },
+    "Virhe historiadatan hakemisessa:", // Lokiviesti virhetilanteessa
+    "Historiadatan hakeminen epäonnistui", // Vastausviesti kutsujalle virhetilanteessa
+  ),
+); // Reitin määrittely päättyy
 
-  res.json(KNOWN_DEVICE); // Palautetaan laitteen tiedot
-}); // Reitin määrittely päättyy
+// Dashboard hakee tästä laitteen perustiedot — EI suojattu
+app.get(
+  "/devices/:deviceId",
+  asyncHandler(
+    async (req, res) => {
+      // Varsinainen laitetietojen hakulogiikka
+      const { deviceId } = req.params; // Poimitaan laitteen tunniste osoitteesta
+      const device = await getDevice(deviceId); // Haetaan laite tietokannasta
+
+      if (!device) {
+        // Jos laitetta ei löytynyt
+        return res.status(404).json({ error: "Laitetta ei löytynyt" }); // Vastataan 404-statuksella
+      } // If-lohkon loppu
+
+      const earliestMeasurementAt = await getEarliestMeasurementTime(deviceId); // Haetaan vanhimman mittauksen ajanhetki historiavalitsinta varten
+      res.json({ ...device, earliestMeasurementAt }); // Palautetaan laitteen tiedot ja historiavalitsimen alaraja
+    },
+    "Virhe laitetietojen hakemisessa:", // Lokiviesti virhetilanteessa
+    "Laitetietojen hakeminen epäonnistui", // Vastausviesti kutsujalle virhetilanteessa
+  ),
+); // Reitin määrittely päättyy
 
 app.get(
   "/weather", // GET-reitti sääennusteelle
@@ -143,7 +187,7 @@ app.get(
       // Varsinainen sääennusteiden hakulogiikka
       const pastHours = parseHours(req.query.pastHours, 24); // Luetaan ja rajataan menneen aikavälin tunnit, oletus 24
       const futureHours = parseHours(req.query.futureHours, 12); // Luetaan ja rajataan tulevan aikavälin tunnit, oletus 12
-      const forecasts = await getWeatherForecasts(pastHours, futureHours); // Haetaan ennusteet välimuistista
+      const forecasts = await getWeatherForecasts(pastHours, futureHours); // Haetaan ennusteet tietokannasta
       res.json({ pastHours, futureHours, count: forecasts.length, forecasts }); // Palautetaan data metatietojen kanssa
     },
     "Virhe sääennusteen haussa:", // Lokiviesti virhetilanteessa
@@ -151,39 +195,26 @@ app.get(
   ),
 ); // Reitin määrittely päättyy
 
-// weather-fetcher.js (Render Cron Job) lähettää tähän hakemansa Yr.no-datan — SUOJATTU API-avaimella, sama avain kuin mittauksilla.
-// Tarvitaan koska cron-job on erillinen kertaluontoinen prosessi eikä jaa muistia käynnissä olevan serverin kanssa.
-app.post(
-  "/weather",
-  checkApiKey, // checkApiKey ajetaan ENNEN varsinaista käsittelijää
+// Dashboard hakee tästä laitteen historiadatan tarkalta päivämääräväliltä — EI suojattu, erillään hours-pohjaisesta reitistä
+app.get(
+  "/weather/range",
   asyncHandler(
     async (req, res) => {
-      // Varsinainen sääennusteiden erätallennuslogiikka
-      const { forecasts } = req.body; // Odotettu muoto: { forecasts: [{ forecastTime, temperature, symbolCode }, ...] }
+      // Varsinainen historiahaun logiikka
+      const { from, to } = req.query; // Historiavalitsimen päivämääräparametrit
 
-      if (!Array.isArray(forecasts) || forecasts.length === 0) {
-        // Taulukko vaaditaan eikä se saa olla tyhjä
+      if (!isValidDateParam(from) || !isValidDateParam(to)) {
+        // Molemmat vaaditaan muodossa YYYY-MM-DD
         return res
           .status(400)
-          .json({ error: "forecasts-taulukko vaaditaan eikä se saa olla tyhjä" }); // Virheviesti kutsujalle
+          .json({ error: "from ja to vaaditaan muodossa YYYY-MM-DD" }); // Virheviesti kutsujalle
       } // If-lohkon loppu
 
-      for (const f of forecasts) {
-        // Tarkistetaan jokainen piste ennen tallennusta
-        if (!f.forecastTime || typeof f.temperature !== "number") {
-          // Pakolliset kentät puuttuvat tai väärää tyyppiä
-          return res.status(400).json({
-            error:
-              "Jokaisella ennustepisteellä vaaditaan forecastTime ja numeerinen temperature",
-          }); // Virheviesti kutsujalle
-        } // If-lohkon loppu
-      } // Silmukan loppu
-
-      saveWeatherForecastBatch(forecasts); // Tallennetaan koko erä välimuistiin
-      res.status(201).json({ message: "Sääennusteet tallennettu", count: forecasts.length }); // Onnistumisvastaus
+      const forecasts = await getWeatherForecastsInRange(from, to); // Haetaan säädata annetulta väliltä
+      res.json({ from, to, count: forecasts.length, forecasts }); // Palautetaan data metatietojen kanssa
     },
-    "Virhe sääennusteiden tallennuksessa:", // Lokiviesti virhetilanteessa
-    "Sääennusteiden tallennus epäonnistui", // Vastausviesti kutsujalle virhetilanteessa
+    "Virhe historiadatan hakemisessa:", // Lokiviesti virhetilanteessa
+    "Historiadatan hakeminen epäonnistui", // Vastausviesti kutsujalle virhetilanteessa
   ),
 ); // Reitin määrittely päättyy
 

@@ -19,17 +19,23 @@ import {
 import {
   fetchDevice, // Hakee laitteen perustiedot
   fetchMeasurements, // Hakee mittaukset viimeisimmältä aikaväliltä
+  fetchMeasurementsRange, // Hakee mittaukset tarkalta päivämääräväliltä (historiavalitsin)
   fetchWeather, // Hakee sääennusteet
+  fetchWeatherRange, // Hakee sääennusteet tarkalta päivämääräväliltä (historiavalitsin)
 } from './api/backendApi'; // Tuodaan backendin hakufunktiot
 import { useFetch } from './hooks/useFetch'; // Tuodaan yhteinen haku/lataus/virhe-hook
 import Card from './components/Card'; // Tuodaan yhteinen korttikomponentti
 
 const REFETCH_INTERVAL_MS = 10 * 60 * 1000; // Taustapäivitysväli: 10 minuuttia, sama tahti kuin laitteen mittausten lähetyksellä
+const TODAY = new Date().toISOString().slice(0, 10); // Kuluva päivä muodossa YYYY-MM-DD, historiavalitsimen yläraja
+const YESTERDAY = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10); // Eilinen päivä, historiavalitsimen oletusalaraja
 
 interface Device {
   // Laitteen perustiedot backendista
   device_id: string; // Laitteen tunniste
   location: string; // Laitteen sijainti (esim. "Parveke")
+  created_at: string; // Laitteen rekisteröintiaika
+  earliestMeasurementAt: string | null; // Vanhimman mittauksen ajanhetki, historiavalitsimen alaraja
 }
 
 function App() {
@@ -43,12 +49,12 @@ function App() {
     loading: measurementsLoading,
     error: measurementsError,
   } = useFetch<Measurement[]>(
-    () => fetchMeasurements('wemos-mittari', 24),
+    () => fetchMeasurements('wemos-mittari', 48),
     [],
     REFETCH_INTERVAL_MS
   ); // Mittaushistoria — ydindata, jota ilman ei ole mitään näytettävää, päivittyy taustalla
   const { data: forecastsData, loading: weatherLoading } = useFetch<WeatherForecast[]>(
-    () => fetchWeather(24, 12),
+    () => fetchWeather(48, 12),
     [],
     REFETCH_INTERVAL_MS
   ); // Sääennusteet — ei-kriittinen, puuttuminen piilottaa vain ennusteviivan, päivittyy taustalla
@@ -58,11 +64,56 @@ function App() {
 
   const [showMeasured, setShowMeasured] = useState(true); // Näytetäänkö mittausviiva
   const [showForecast, setShowForecast] = useState(true); // Näytetäänkö ennusteviiva
-  const [hours, setHours] = useState(12); // Näytettävän aikaikkunan pituus tunteina (valittavissa 6/12/24h pudotusvalikosta)
+  const [hours, setHours] = useState(12); // Näytettävän aikaikkunan pituus tunteina (valittavissa 12/24/48h pudotusvalikosta)
+  const [isCustomRange, setIsCustomRange] = useState(false); // Onko "Omavalintainen"-vaihtoehto valittuna (näyttää pvm-kentät)
+
+  const [rangeFrom, setRangeFrom] = useState(TODAY); // Historiavalitsimen "alkaen"-päivä
+  const [rangeTo, setRangeTo] = useState(TODAY); // Historiavalitsimen "asti"-päivä
+  const [rangeData, setRangeData] = useState<Measurement[] | null>(null); // Haettu historiaväli — ylikäy hours-valinnan kun asetettu
+  const [rangeLoading, setRangeLoading] = useState(false); // Onko historiahaku kesken
+  const [rangeError, setRangeError] = useState<string | null>(null); // Historiahaun mahdollinen virheviesti
+
+  const [weatherRangeData, setWeatherRangeData] = useState<WeatherForecast[] | null>(null); // Haettu säädata — ylikäy hours-valinnan kun asetettu
+
+  async function handleFetchRange(from: string = rangeFrom, to: string = rangeTo) {
+    // Haetaan tarkka päivämääräväli — joko "Hae"-painikkeesta tai automaattisesti "Väli"-vaihtoehdon valinnasta,
+    // jolloin from/to annetaan eksplisiittisesti koska state ei ehdi päivittyä ennen kutsua
+    setRangeLoading(true); // Näytetään latausindikaattori haun ajaksi
+    setRangeError(null); // Nollataan edellinen virhe
+    try {
+      const [measurements, weather] = await Promise.all([
+        // Haetaan mittaukset ja säädata rinnakkain samalta väliltä
+        fetchMeasurementsRange('wemos-mittari', from, to), // Valitun välin mittaukset
+        fetchWeatherRange(from, to), // Valitun välin säädata
+      ]); // Odotetaan että molemmat haut valmistuvat
+      setRangeData(measurements); // Otetaan haettu väli käyttöön kuvaajassa
+      setWeatherRangeData(weather); // Otetaan haettu säädata käyttöön vasta kun molemmat haut onnistuivat, ettei mittaus- ja sääviiva näytä eri aikaväliä
+    } catch (err) {
+      setRangeError((err as Error).message); // Tallennetaan virheviesti näytettäväksi
+    } finally {
+      setRangeLoading(false); // Lopetetaan latausindikaattori joka tapauksessa
+    }
+  } // Funktion loppu
 
   function handleHoursChange(value: number) {
-    // Tuntivalikon valinta
+    // Tuntivalikon valinta ylikäy aina aktiivisen historiavälin
     setHours(value); // Päivitetään valittu aikaikkuna
+    setIsCustomRange(false); // Piilotetaan pvm-kentät, palataan tuntivalikon näkymään
+    setRangeData(null); // Palataan elävään näkymään, historiaväli ei ole enää aktiivinen
+    setWeatherRangeData(null); // Palataan elävään näkymään, säädata ei ole enää aktiivinen
+  } // Funktion loppu
+
+  function handleHoursSelectChange(value: string) {
+    // Tuntivalikon raaka onChange-arvo ("6"/"12"/"24" tai "custom")
+    if (value === 'custom') {
+      // "Omavalintainen" valittu
+      setIsCustomRange(true); // Näytetään pvm-kentät
+      setRangeFrom(YESTERDAY); // Oletusalaraja: eilen
+      setRangeTo(TODAY); // Oletusyläraja: tänään
+      handleFetchRange(YESTERDAY, TODAY); // Haetaan oletusväli heti, ettei käyttäjän tarvitse painaa "Hae" tyhjällä näkymällä
+    } else {
+      handleHoursChange(parseInt(value)); // Numeerinen tuntivalinta: piilotetaan pvm-kentät ja palataan elävään näkymään
+    }
   } // Funktion loppu
 
   if (deviceLoading || measurementsLoading || weatherLoading) {
@@ -91,9 +142,10 @@ function App() {
   const filteredForecasts = forecasts.filter((f) => new Date(f.forecast_time).getTime() >= cutoff); // Rajataan ennusteet samaan ikkunaan
 
   // Muutetaan mittaukset Rechartsille sopivaan muotoon
-  const chartData = buildChartData(filteredMeasurements); // 1. Suodatetaan ja muunnetaan mittaukset kuvaajan muotoon
-  const forecastData = filteredForecasts.map((f) => ({
-    // 2. Muunnetaan ennusteet kuvaajan muotoon
+  // Aktiivinen historiaväli (jos haettu) ylikäy elävän hours-valinnan
+  const chartData = buildChartData(rangeData ?? filteredMeasurements); // 1. Suodatetaan ja muunnetaan mittaukset kuvaajan muotoon
+  const forecastData = (weatherRangeData ?? filteredForecasts).map((f) => ({
+    // 2. Muunnetaan ennusteet kuvaajan muotoon — haettu historiaväli ylikäy elävät ennusteet, jos asetettu
     timestamp: new Date(f.forecast_time).getTime(), // Unix-aika millisekunteina
     time: new Date(f.forecast_time).toLocaleTimeString('fi-FI', {
       // Kellonaika X-akselia varten
@@ -161,15 +213,16 @@ function App() {
             <span className="text-sm text-red-400">Ulko&shy;lämpö&shy;tila</span>
           </label>
           <select
-            value={hours}
-            onChange={(e) => handleHoursChange(parseInt(e.target.value))}
+            value={isCustomRange ? 'custom' : hours}
+            onChange={(e) => handleHoursSelectChange(e.target.value)}
             className="ml-auto text-sm bg-transparent dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded px-2 py-1 cursor-pointer"
           >
-            {[6, 12, 24].map((h) => (
+            {[12, 24, 48].map((h) => (
               <option key={h} value={h}>
                 {h}h
               </option>
             ))}
+            <option value="custom">Väli</option>
           </select>
         </div>
         <ResponsiveContainer width="100%" height={300}>
@@ -255,6 +308,38 @@ function App() {
             )}{' '}
           </LineChart>
         </ResponsiveContainer>
+
+        {/* Historiavalitsin — näkyy vain "Omavalintainen" valittuna, ylikäy tuntivalikon kun haettu */}
+        {isCustomRange && (
+          <div className="flex flex-wrap items-center gap-2 mt-3 text-sm">
+            <input
+              type="date"
+              value={rangeFrom}
+              min={device?.earliestMeasurementAt?.slice(0, 10)}
+              max={rangeTo}
+              onChange={(e) => setRangeFrom(e.target.value)}
+              className="bg-transparent dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded px-2 py-1"
+            />
+            <span className="dark:text-gray-400">–</span>
+            <input
+              type="date"
+              value={rangeTo}
+              min={rangeFrom}
+              max={TODAY}
+              onChange={(e) => setRangeTo(e.target.value)}
+              className="bg-transparent dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded px-2 py-1"
+            />
+            <button
+              type="button"
+              onClick={() => handleFetchRange()}
+              disabled={rangeLoading}
+              className="border border-gray-300 dark:border-gray-600 rounded px-3 py-1 cursor-pointer disabled:cursor-default disabled:opacity-50"
+            >
+              {rangeLoading ? 'Haetaan…' : 'Hae'}
+            </button>
+            {rangeError && <span className="text-red-400">Virhe: {rangeError}</span>}
+          </div>
+        )}
       </Card>
 
       <Card delay={0.3}>
