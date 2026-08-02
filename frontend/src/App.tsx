@@ -7,6 +7,7 @@ import {
   CartesianGrid, // Taustan ruudukkoviivat
   Tooltip, // Hiiren päälle tuleva tietolaatikko
   ResponsiveContainer, // Venyttää kuvaajan vanhemman elementin kokoiseksi
+  ReferenceLine, // Pystyviiva nykyhetken kohdalle
 } from 'recharts'; // Tuodaan Recharts-komponentit
 import {
   type Measurement, // Mittauksen tyyppi
@@ -133,7 +134,8 @@ function App() {
     return <p>Virhe: {measurementsError}</p>; // Näytetään virheviesti sivun sijaan
   }
 
-  const cutoff = Date.now() - hours * 60 * 60 * 1000; // Aikaraja millisekunteina
+  const now = Date.now(); // Nykyhetki millisekunteina, käytetään kuvaajan "nyt"-viivaan
+  const cutoff = now - hours * 60 * 60 * 1000; // Aikaraja millisekunteina
 
   const filteredMeasurements = measurements.filter(
     (m) => new Date(m.measured_at).getTime() >= cutoff // Vain valitun ikkunan sisällä
@@ -229,6 +231,14 @@ function App() {
           <LineChart>
             <CartesianGrid strokeDasharray="3 3" stroke="#4B5563" />{' '}
             {/* Ruudukkoviivat taustalle */}
+            <ReferenceLine
+              x={now}
+              stroke="#F9FAFB"
+              strokeWidth={1}
+              strokeOpacity={0.6}
+              label={{ value: 'Nyt', position: 'insideTopRight', fill: '#F9FAFB', fontSize: 10 }}
+            />{' '}
+            {/* Pystyviiva nykyhetken kohdalle */}
             <XAxis
               dataKey="timestamp"
               type="number"
