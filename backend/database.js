@@ -22,10 +22,16 @@ pool.on("connect", (client) => {
 const cache = new Map(); // Välimuisti mittausten hakua varten, avaimena "deviceId:hours"
 const CACHE_TTL = 5 * 60 * 1000; // Välimuistin voimassaoloaika millisekunteina (5 minuuttia)
 
+// Varavälimuisti laitteen viimeisimmälle mittaukselle, avaimena deviceId — pidetään
+// erillään yllä olevasta hakuvälimuistista, jotta "Viimeisin mittaus" saadaan fronttiin
+// vaikka tietokantayhteys olisi poikki (esim. ilmaistason tuntiraja täynnä)
+const latestMeasurementCache = new Map();
+
 // Tallentaa uuden mittauksen tietokantaan
 // Ottaa olion mittauksen tiedoilla
 async function saveMeasurement({ deviceId, temperature, status, measuredAt }) {
   // Puretaan mittausolion kentät parametreiksi
+  latestMeasurementCache.set(deviceId, { device_id: deviceId, temperature, status, measured_at: measuredAt }); // Päivitetään varavälimuisti ennen tietokantakutsua, jotta se säilyy vaikka kutsu alla epäonnistuisi
   const result = await pool.query(
     // Suoritetaan SQL-kysely ja odotetaan vastausta
     `INSERT INTO measurements (device_id, temperature, status, measured_at) -- Lisätään uusi rivi measurements-tauluun
@@ -55,16 +61,24 @@ async function getRecentMeasurements(deviceId, hours = 24) {
     return cached.data; // Palautetaan välimuistissa oleva data
   } // If-lohkon loppu
 
-  const result = await pool.query(
-    // Suoritetaan SQL-kysely
-    `SELECT * FROM measurements -- Haetaan kaikki sarakkeet measurements-taulusta
-     WHERE device_id = $1 -- Rajataan haluttuun laitteeseen
-       AND measured_at >= NOW() - INTERVAL '1 hour' * $2 -- Rajataan aikavälin mukaan
-     ORDER BY measured_at ASC`, // INTERVAL-laskenta tehdään suoraan PostgreSQL:ssä
-    [deviceId, hours], // Parametrit kyselyyn
-  ); // Kyselyn kutsu päättyy
-  cache.set(key, { data: result.rows, timestamp: now }); // Tallennetaan tulos välimuistiin avaimella
-  return result.rows; // Palautetaan kaikki löytyneet rivit listana
+  try {
+    const result = await pool.query(
+      // Suoritetaan SQL-kysely
+      `SELECT * FROM measurements -- Haetaan kaikki sarakkeet measurements-taulusta
+       WHERE device_id = $1 -- Rajataan haluttuun laitteeseen
+         AND measured_at >= NOW() - INTERVAL '1 hour' * $2 -- Rajataan aikavälin mukaan
+       ORDER BY measured_at ASC`, // INTERVAL-laskenta tehdään suoraan PostgreSQL:ssä
+      [deviceId, hours], // Parametrit kyselyyn
+    ); // Kyselyn kutsu päättyy
+    cache.set(key, { data: result.rows, timestamp: now }); // Tallennetaan tulos välimuistiin avaimella
+    return result.rows; // Palautetaan kaikki löytyneet rivit listana
+  } catch (error) {
+    // Tietokantayhteys ei toiminut (esim. ilmaistason tuntiraja täynnä) — käytetään varajärjestelmää
+    console.error("Tietokantahaku epäonnistui, käytetään varavälimuistia:", error);
+    if (cached) return cached.data; // Vanhentunut mutta täysi tulos on parempi kuin ei mitään
+    const latest = latestMeasurementCache.get(deviceId); // Viimeisin tunnettu mittaus talteen tallennuksesta
+    return latest ? [latest] : []; // Vähintään "Viimeisin mittaus" saadaan fronttiin, tai tyhjä lista jos ei tunneta
+  } // Try-catch-lohkon loppu
 } // Funktion loppu
 
 // Hakee laitteen mittaukset tarkalta, käyttäjän valitsemalta päivämääräväliltä
