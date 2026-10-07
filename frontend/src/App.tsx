@@ -182,7 +182,7 @@ function App() {
     <div className="min-h-screen dark:text-gray-400 dark:bg-gray-900 p-2">
       <div className="mb-4">
         <h1 className="text-2xl font-bold dark:text-gray-100">IoT Temp Pipeline</h1>
-        <p className="text-sm dark:text-gray-400">{device?.location}</p>
+        <p className="text-sm dark:text-gray-400">{device?.location} (Huom: toistaiseksi siirretty sisätiloihin)</p>
       </div>
       <Card delay={0.1}>
         {latest && (
